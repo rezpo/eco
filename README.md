@@ -21,6 +21,9 @@ Clona este repositorio y ejecuta el script de instalación:
 
 El script instalará el driver virtual de audio **BlackHole 2ch** (vía Homebrew) y empaquetará e instalará `eco` como un comando global del sistema usando `pipx` (o un entorno virtual aislado en `~/.eco/venv` como alternativa).
 
+> [!IMPORTANT]
+> **Reiniciar la Terminal:** Si es la primera vez que instalas `pipx`, después de ejecutar `setup.sh` (o `pipx ensurepath` en el Método 2), debes cerrar y volver a abrir tu ventana de la terminal (o ejecutar `source ~/.zshrc` / `source ~/.bash_profile`) para que el sistema reconozca el comando `eco`.
+
 ### Método 2: Directo desde GitHub (Para otras Macs)
 
 Si compartes el código en un repositorio de Git, cualquier usuario en otra Mac puede instalarlo directamente ejecutando:
@@ -58,6 +61,9 @@ Después de la instalación, necesitas configurar tu salida de audio:
 4. Asegurar que **Built-in Output** esté arriba (Clock Source)
 5. Habilitar **Drift Correction** en BlackHole
 6. Right-click → **Use This Device For Sound Output**
+
+> [!TIP]
+> **Control del Volumen en macOS:** Dado que macOS bloquea el control nativo de volumen cuando usas un dispositivo Multi-Output, puedes descargar y usar utilidades gratuitas como [eqMac](https://eqmac.app/) para poder subir y bajar el volumen directamente con las teclas multimedia del teclado de forma normal.
 
 ### Permisos de micrófono
 
