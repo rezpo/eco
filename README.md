@@ -9,6 +9,9 @@ Grabador de audio interno para macOS. Captura audio del sistema (Meet, videos, m
 - Homebrew
 - BlackHole 2ch (se instala automáticamente)
 
+> [!WARNING]
+> **Permisos de Administrador Requeridos:** La instalación del driver virtual **BlackHole 2ch** requiere privilegios de administrador (`sudo`) en macOS para poder copiar el controlador en la carpeta del sistema. Si estás en una Mac corporativa sin accesos de administrador, deberás solicitar a tu departamento de IT que instale BlackHole 2ch por ti o, alternativamente, utilizar Eco únicamente en modo micrófono (`eco --input`).
+
 ## Instalación
 
 ### Método 1: Localmente (Recomendado)
