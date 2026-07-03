@@ -51,16 +51,29 @@ Eco buscará automáticamente tus API keys en:
 2. Tu directorio home (`~/.eco.env`)
 3. La carpeta estándar de configuraciones (`~/.config/eco/.env`)
 
-### Configuración manual de Multi-Output Device
+### Configuración del Dispositivo de Salida Múltiple (Requerido)
 
-Después de la instalación, necesitas configurar tu salida de audio:
+Para poder capturar el audio de tu Mac (llamadas de Zoom/Teams, videos, música) **sin perder la audición en tus auriculares o altavoces**, debes crear un Dispositivo de Salida Múltiple:
 
-1. Abrir **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
-2. Click **+** → **Create Multi-Output Device**
-3. Marcar: **BlackHole 2ch** + tus headphones/altavoces
-4. Asegurar que **Built-in Output** esté arriba (Clock Source)
-5. Habilitar **Drift Correction** en BlackHole
-6. Right-click → **Use This Device For Sound Output**
+1. **Abrir la Configuración de Audio MIDI:**
+   - Presiona `Cmd + Barra espaciadora` (Spotlight).
+   - Busca **Configuración de Audio MIDI** (o *Audio MIDI Setup*) y ábrela.
+
+2. **Crear el Dispositivo de Salida Múltiple:**
+   - Haz clic en el botón **`+`** en la esquina inferior izquierda.
+   - Selecciona **Crear dispositivo de salida múltiple** (*Create Multi-Output Device*).
+
+3. **Configurar las Salidas de Audio:**
+   - Marca la casilla de **BlackHole 2ch** (el driver virtual).
+   - Marca la casilla de tus auriculares físicos (AirPods, Bluetooth, cable) o los altavoces de tu Mac.
+
+4. **Ajustar Sincronización y Drift Correction (Muy Importante):**
+   - **Fuente del reloj** (*Clock Source*): Selecciona tus auriculares o altavoces físicos (esto define el ritmo maestro).
+   - **Corrección de desviación** (*Drift Correction*): Márcala **únicamente en la casilla de BlackHole 2ch** (esto evita desfases y saltos de audio en grabaciones largas).
+
+5. **Establecer como Salida por Defecto:**
+   - Haz clic derecho sobre tu nuevo **Dispositivo de salida múltiple** en la lista de la izquierda y selecciona **Usar este dispositivo para la salida de sonido** (*Use This Device For Sound Output*).
+   - *(También puedes hacerlo desde Ajustes del Sistema → Sonido → Salida, seleccionando el Dispositivo de salida múltiple).*
 
 > [!TIP]
 > **Control del Volumen en macOS:** Dado que macOS bloquea el control nativo de volumen cuando usas un dispositivo Multi-Output, puedes descargar y usar utilidades gratuitas como [eqMac](https://eqmac.app/) para poder subir y bajar el volumen directamente con las teclas multimedia del teclado de forma normal.
