@@ -27,7 +27,7 @@ class AnthropicClient(LLMClient):
 
     def __init__(self):
         self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        self.model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        self.model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
         self._client = None
 
     def _get_client(self):

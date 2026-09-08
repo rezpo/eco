@@ -40,8 +40,9 @@ try:
 except ImportError:
     pass
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_SAMPLE_RATE = 16000  # Deepgram works best with 16kHz
+BLOCK_SIZE = 1024
 SLASH_MENU_HEIGHT = 25
 TRANSCRIBE_INTERVAL_SECONDS = 1.0  # Time in seconds to buffer audio before transcribing
 CONTEXT_MAX_LINES = 100  # Maximum lines in context buffer
@@ -415,7 +416,7 @@ class Sidekick:
         try:
             self._audio_stream = sd.InputStream(
                 device=self.device_idx,
-                channels=DEFAULT_CHANNELS,
+                channels=device_channels,
                 samplerate=DEFAULT_SAMPLE_RATE,
                 blocksize=BLOCK_SIZE,
                 callback=audio_callback
@@ -892,7 +893,7 @@ class Sidekick:
                             parts = input_to_process.split(maxsplit=1)
                             cmd_part = parts[0].lower()
                             
-                            valid_cmds = menu_items + ["/clear", "/stop-listening", "/exit"]
+                            valid_cmds = menu_items + ["/clear", "/stop-listening", "/exit", "/screecapture"]
                             if cmd_part not in valid_cmds:
                                 selected_cmd = menu_items[self.menu_selected_idx]
                                 if len(parts) > 1:
@@ -1152,7 +1153,7 @@ class Sidekick:
                 list_visible_windows()
             self.safe_print(f.getvalue())
 
-        elif cmd == "/screencapture":
+        elif cmd in ("/screencapture", "/screecapture"):
             # 1. Check if recording/transcription is active
             was_active = False
             if hasattr(self, '_grabador') and self._grabador and self._grabador.recording:
@@ -1166,33 +1167,153 @@ class Sidekick:
             if was_active:
                 self._handle_command("/stop")
 
-            # 3. Print list of windows first
-            import io
-            from contextlib import redirect_stdout
-            from eco import list_visible_windows, find_window
-            f = io.StringIO()
-            with redirect_stdout(f):
-                list_visible_windows()
-            self.safe_print(f.getvalue())
-
-            # 4. Restore terminal to normal mode temporarily
+            # 3. Interactive arrow selection
             import termios
             import tty
+            import fcntl
+            import os
+            import select
+            import shutil
+            from eco import get_visible_windows, find_window
+
             fd = sys.stdin.fileno()
-            if hasattr(self, 'old_settings') and self.old_settings:
-                termios.tcsetattr(fd, termios.TCSADRAIN, self.old_settings)
-
-            # 5. Prompt the user
-            print("  Ingrese el nombre de la aplicación, título o ID de la ventana a capturar (o presione Enter para pantalla completa):")
             try:
-                target = input("  > ").strip()
-            except (KeyboardInterrupt, EOFError):
-                target = ""
+                old_settings = termios.tcgetattr(fd)
+                tty.setcbreak(fd)
+            except termios.error:
+                old_settings = None
 
-            # 6. Restore cbreak mode
-            tty.setcbreak(fd)
+            if old_settings is None:
+                # Fallback non-interactive / simple text input if not a TTY
+                print("  Ingrese el nombre de la aplicación, título o ID de la ventana a capturar (o presione Enter para pantalla completa):")
+                try:
+                    target = input("  > ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    target = ""
+            else:
+                windows = get_visible_windows()
+                choices = [{"id": None, "owner": "Pantalla Completa", "title": ""}]
+                for w in windows:
+                    choices.append({
+                        "id": w.get("id"),
+                        "owner": w.get("owner", "Desconocido"),
+                        "title": w.get("title", "")
+                    })
 
-            # 7. Configure grabador with new window
+                selected_idx = 0
+                scroll_offset = 0
+                max_visible = 10
+                
+                num_choice_lines = min(len(choices), max_visible)
+                total_lines_to_draw = 1 + num_choice_lines + 1
+                
+                # Print empty lines to prepare screen space
+                for _ in range(total_lines_to_draw):
+                    sys.stdout.write("\n")
+                sys.stdout.flush()
+                lines_drawn = total_lines_to_draw
+
+                cancelled = False
+                try:
+                    while True:
+                        if selected_idx < scroll_offset:
+                            scroll_offset = selected_idx
+                        elif selected_idx >= scroll_offset + max_visible:
+                            scroll_offset = selected_idx - max_visible + 1
+
+                        # Move cursor up to the start of our drawing block
+                        sys.stdout.write(f"\033[{lines_drawn}A")
+                        
+                        width, height = shutil.get_terminal_size()
+                        
+                        # 1. Header
+                        header = "  Seleccione la ventana a capturar (Use ↑/↓ para navegar, Enter para confirmar, Esc/q para cancelar):"
+                        if len(header) > width - 2:
+                            header = header[:width-5] + "..."
+                        sys.stdout.write(f"\033[K\033[1;96m{header}\033[0m\n")
+                        
+                        # 2. Choices
+                        for i in range(scroll_offset, scroll_offset + num_choice_lines):
+                            choice = choices[i]
+                            if choice["id"] is None:
+                                text = "   [Pantalla Completa]"
+                            else:
+                                text = f"   ID: {choice['id']:<10} | {choice['owner']:<20} | {choice['title']}"
+                            
+                            display_text = text[:width-4]
+                            
+                            if i == selected_idx:
+                                # Selected row with green background
+                                padded_text = f"  ➔ {display_text[3:]}".ljust(width - 4)
+                                sys.stdout.write(f"\033[K\033[30;102m  {padded_text}  \033[0m\n")
+                            else:
+                                sys.stdout.write(f"\033[K{display_text}\n")
+                        
+                        # 3. Footer
+                        footer = f"  [Opción {selected_idx + 1} de {len(choices)}]"
+                        if len(choices) > max_visible:
+                            footer += " (Use ↑/↓ para desplazar)"
+                        if len(footer) > width - 2:
+                            footer = footer[:width-5] + "..."
+                        sys.stdout.write(f"\033[K\033[90m{footer}\033[0m\n")
+                        sys.stdout.flush()
+                        
+                        r, _, _ = select.select([fd], [], [], 0.1)
+                        if not r:
+                            continue
+                            
+                        try:
+                            char_bytes = os.read(fd, 1)
+                            if not char_bytes:
+                                break
+                            char = char_bytes.decode('utf-8', errors='ignore')
+                        except OSError:
+                            break
+                            
+                        if char in ('\x03', '\x04'):
+                            cancelled = True
+                            break
+                        elif char == '\x1b':
+                            old_fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+                            fcntl.fcntl(fd, fcntl.F_SETFL, old_fl | os.O_NONBLOCK)
+                            seq = ""
+                            try:
+                                seq_bytes = os.read(fd, 4)
+                                seq = seq_bytes.decode('utf-8', errors='ignore')
+                            except OSError:
+                                seq = ""
+                            finally:
+                                fcntl.fcntl(fd, fcntl.F_SETFL, old_fl)
+                                
+                            if not seq:  # Just ESC key
+                                cancelled = True
+                                break
+                            elif seq in ("[A", "OA"):
+                                selected_idx = (selected_idx - 1) % len(choices)
+                            elif seq in ("[B", "OB"):
+                                selected_idx = (selected_idx + 1) % len(choices)
+                        elif char in ('q', 'Q'):
+                            cancelled = True
+                            break
+                        elif char in ('\n', '\r'):
+                            break
+                finally:
+                    # Clear menu from terminal screen
+                    sys.stdout.write(f"\033[{lines_drawn}A\033[J")
+                    sys.stdout.flush()
+                    # Restore original terminal settings
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+                if cancelled:
+                    self.safe_print("  [x] Selección cancelada.")
+                    if was_active:
+                        self._handle_command("/start")
+                    return
+
+                selected_choice = choices[selected_idx]
+                target = str(selected_choice["id"]) if selected_choice["id"] is not None else ""
+
+            # Configure grabador with new window
             if hasattr(self, '_grabador') and self._grabador:
                 if target:
                     self._grabador.window_query = target
@@ -1206,7 +1327,7 @@ class Sidekick:
                     self._grabador.window_query = None
                     self.safe_print("  [+] Configurado para capturar pantalla completa.")
 
-            # 8. Start / resume recording and transcription
+            # Start / resume recording and transcription
             self._handle_command("/start")
 
         elif cmd == "/help":
