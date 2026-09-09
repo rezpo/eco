@@ -210,24 +210,13 @@ Las capturas se guardan como `.jpg` en una carpeta `<nombre_del_audio>_screensho
 eco --output --window "Zoom" --screenshot-interval 15 --start
 ```
 
-### Capturar Chrome con video reproduciéndose
+### Limitación conocida: video de Chrome + ventana oculta
 
-Cuando una ventana de Chrome con un video corriendo (una llamada, un tutorial, YouTube) queda **completamente oculta** detrás de otra ventana, la captura de pantalla normal de macOS deja de poder leer ese video correctamente — es una limitación de cómo Chrome compone video acelerado por hardware, no un bug de Eco. Para evitarlo, cuando detectas una ventana de Chrome con `--window`, Eco puede usar el propio protocolo de depuración de Chrome (CDP) para pedirle el screenshot directamente, sin pasar por macOS — esto sí funciona con la ventana completamente oculta.
+Cuando una ventana de Chrome con un video corriendo (una llamada, un tutorial, YouTube) queda **completamente oculta** detrás de otra ventana, esa captura puntual puede congelarse o verse en negro hasta que la ventana vuelva a estar visible — es una limitación de cómo Chrome compone video acelerado por hardware en macOS, no un bug de Eco (se confirmó que ni la API clásica de macOS ni ScreenCaptureKit pueden leer ese contenido mientras está oculto). Eco te avisa de esto al iniciar si detecta que estás capturando una ventana de Chrome.
 
-Esto requiere que Chrome corra con depuración remota activada (un flag que solo se puede fijar al iniciar el proceso). Si no la tiene, Eco te lo pregunta:
+**Esto no afecta el audio ni la transcripción** — solo esa captura de pantalla puntual. Podés seguir usando la computadora con normalidad; Eco simplemente reutiliza la última captura válida hasta que la ventana vuelva a estar visible.
 
-```
-[Chrome] Para que las capturas de video no se rompan al cambiar de ventana, Chrome
-necesita reiniciarse con depuración remota activada.
-[Chrome] ¿Reiniciar Chrome ahora? [s/N]
-```
-
-Si aceptas, Eco cierra Chrome y lo vuelve a abrir (mismo perfil, mismas extensiones y sesiones) con el flag activado.
-
-> [!WARNING]
-> **Revisa `chrome://settings/onStartup` antes de aceptar.** Si no tienes activado "Continuar donde lo dejaste", cerrar Chrome para reiniciarlo **pierde las pestañas abiertas** (no el historial: esas páginas siguen en `Cmd+Y`, pero como pestañas activas desaparecen). Eco detecta esto y te avisa explícitamente antes de preguntar, pero la decisión de continuar es tuya.
-
-Si respondes que no (o el reinicio falla), Eco sigue funcionando con el método clásico de captura — solo que el video puede fallar mientras la ventana esté oculta, como se describió arriba.
+Si Chrome ya corre con depuración remota habilitada (`--remote-debugging-port`, típicamente sobre un perfil separado con `--user-data-dir`), Eco la usa automáticamente para evitar el problema por completo — pero no la activa por ti: Chrome se niega a exponer ese modo sobre tu perfil normal por seguridad (para que nada pueda leer tus sesiones/cookies vía ese puerto), así que no hay una forma simple de habilitarlo sin usar un perfil de Chrome dedicado.
 
 ## Compresión y archivado de grabaciones
 

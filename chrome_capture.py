@@ -9,10 +9,13 @@ normal que esas APIs usan. Pedirle el screenshot directamente a Chrome vía CDP
 (`Page.captureScreenshot`) evita el problema por completo: Chrome renderiza su
 propia página sin pasar por el compositor de ventanas de macOS.
 
-Esto requiere que Chrome corra con `--remote-debugging-port=<PORT>`. Ese flag
-solo puede activarse al iniciar el proceso, así que si Chrome ya está abierto
-sin él, hay que reiniciarlo (`ensure_chrome_debugging` se encarga, pidiendo
-confirmación antes de cerrar las ventanas del usuario).
+Esto requiere que Chrome corra con `--remote-debugging-port=<PORT>`. Chrome
+moderno se niega a exponer ese puerto sobre el perfil de usuario por defecto
+(medida de seguridad, para que nada pueda robar sesiones/cookies vía CDP), así
+que eco NO intenta activarlo ni reiniciar Chrome por sí solo: este módulo solo
+se usa quien ya tenga Chrome corriendo con ese flag por su cuenta (típicamente
+sobre un `--user-data-dir` separado). Cuando no está disponible, la captura de
+ventana cae de vuelta al método clásico de macOS de forma transparente.
 """
 
 import base64
@@ -20,14 +23,10 @@ import json
 import os
 import socket
 import struct
-import subprocess
-import time
 import urllib.request
-from pathlib import Path
 from urllib.parse import urlparse
 
 CHROME_CDP_PORT = 9339
-CHROME_APP_BINARY = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 _BOUNDS_TOLERANCE = 20  # píxeles de tolerancia al comparar bounds de ventana
 
 
@@ -251,108 +250,3 @@ def capture_chrome_window_screenshot(window_bounds, filepath, port=CHROME_CDP_PO
     finally:
         conn.close()
 
-
-def _chrome_is_running():
-    try:
-        res = subprocess.run(
-            ["pgrep", "-x", "Google Chrome"], capture_output=True, text=True
-        )
-        return res.returncode == 0
-    except Exception:
-        return False
-
-
-def chrome_will_restore_session():
-    """True si Chrome está configurado para reabrir las pestañas de la sesión
-    anterior al iniciar ('Continuar donde lo dejaste'). Si esto es False,
-    cerrar Chrome para relanzarlo pierde las pestañas abiertas."""
-    prefs_path = (
-        Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-        / "Default" / "Preferences"
-    )
-    try:
-        data = json.loads(prefs_path.read_text())
-    except (OSError, ValueError):
-        return False
-    # restore_on_startup == 1 significa "Continuar donde lo dejaste".
-    return data.get("session", {}).get("restore_on_startup") == 1
-
-
-def relaunch_chrome_with_debugging(port=CHROME_CDP_PORT, wait_seconds=15):
-    """Cierra Chrome (si está abierto) y lo vuelve a abrir con el flag de
-    depuración remota, usando el mismo perfil de siempre (no uno nuevo). Chrome
-    restaura las pestañas abiertas solo si chrome_will_restore_session() es True.
-    Devuelve True si el puerto de depuración quedó disponible."""
-    if _chrome_is_running():
-        subprocess.run(
-            ["osascript", "-e", 'tell application "Google Chrome" to quit'],
-            capture_output=True,
-        )
-        deadline = time.time() + 10
-        while _chrome_is_running() and time.time() < deadline:
-            time.sleep(0.3)
-
-    # Se invoca el binario directamente: `open -a ... --args` no garantiza que
-    # Chrome reciba el flag si Launch Services considera que "ya hay una
-    # instancia" en algún estado transitorio de cierre.
-    subprocess.Popen(
-        [CHROME_APP_BINARY, f"--remote-debugging-port={port}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    deadline = time.time() + wait_seconds
-    while time.time() < deadline:
-        if is_debug_port_open(port):
-            return True
-        time.sleep(0.5)
-    return False
-
-
-def ensure_chrome_debugging(port=CHROME_CDP_PORT, printer=None, auto_confirm=False):
-    """Verifica que Chrome tenga habilitada la depuración remota; si no,
-    pregunta al usuario (stdin normal, modo no-interactivo del terminal) si
-    quiere que eco reinicie Chrome para activarla. Devuelve True si al volver
-    de esta función el puerto está disponible (ya sea porque ya lo estaba, o
-    porque el reinicio funcionó)."""
-    say = printer or print
-
-    if is_debug_port_open(port):
-        return True
-
-    will_restore = chrome_will_restore_session()
-
-    say("\n  [Chrome] Para que las capturas de video no se rompan al cambiar de "
-        "ventana, Chrome necesita reiniciarse con depuración remota activada.")
-    if will_restore:
-        say("  [Chrome] Esto cerrará todas las ventanas de Chrome y las volverá a "
-            "abrir; tienes 'Continuar donde lo dejaste' activado, así que tus "
-            "pestañas deberían restaurarse solas.")
-    else:
-        say("  [Chrome] ATENCIÓN: no tienes activado 'Continuar donde lo dejaste' "
-            "(chrome://settings/onStartup), así que reiniciar Chrome ahora "
-            "CERRARÁ TODAS TUS PESTAÑAS ACTUALES SIN RESTAURARLAS.")
-        say("  [Chrome] Recomendado: activa esa opción y vuelve a intentarlo, o "
-            "guarda/anota lo que tengas abierto antes de continuar.")
-
-    if not auto_confirm:
-        prompt = "  [Chrome] ¿Reiniciar Chrome ahora de todos modos? [s/N] " if not will_restore \
-            else "  [Chrome] ¿Reiniciar Chrome ahora? [s/N] "
-        try:
-            respuesta = input(prompt).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            respuesta = "n"
-        if respuesta not in ("s", "si", "sí", "y", "yes"):
-            say("  [Chrome] Se continuará con el método clásico de captura "
-                "(puede fallar si hay video reproduciéndose y la ventana queda oculta).")
-            return False
-
-    say("  [Chrome] Reiniciando Chrome con depuración remota...")
-    ok = relaunch_chrome_with_debugging(port=port)
-    if ok:
-        say("  [Chrome] Listo. Las capturas de esta ventana usarán el método robusto.")
-    else:
-        say("  [Chrome] No se pudo confirmar que la depuración remota quedó activa; "
-            "se usará el método clásico de captura.")
-    return ok

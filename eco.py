@@ -1032,11 +1032,11 @@ Ejemplos:
         w_info = find_window(args.window)
         if w_info and w_info.get("owner") == "Google Chrome":
             import chrome_capture
-            if args.window.strip().isdigit():
-                print("  [WARN] Pasaste un ID de ventana: si Chrome se reinicia para activar "
-                      "la depuración remota, ese ID cambiará. Usa un nombre (ej. --window \"Chrome\") "
-                      "en vez de un ID al capturar ventanas de Chrome.")
-            chrome_capture.ensure_chrome_debugging()
+            if not chrome_capture.is_debug_port_open():
+                print("  [i] Estás capturando una ventana de Chrome. Si reproduce video y la tapas "
+                      "por completo con otra ventana, esa captura puede congelarse o verse negra "
+                      "hasta que vuelva a estar visible (limitación de cómo Chrome compone video "
+                      "acelerado por hardware). El audio y la transcripción no se ven afectados.")
 
     if not args.output and not args.input and not args.both:
         parser.print_help()

@@ -1325,10 +1325,10 @@ class Sidekick:
                             import chrome_capture
                             if not chrome_capture.is_debug_port_open():
                                 self.safe_print(
-                                    "  [i] Si esta ventana reproduce video, las capturas pueden fallar al "
-                                    "quedar oculta detrás de otra. Para evitarlo, sal (/quit) y vuelve a "
-                                    "iniciar eco con --window apuntando a esta ventana: te ofrecerá "
-                                    "reiniciar Chrome con depuración remota automáticamente."
+                                    "  [i] Si esta ventana reproduce video y la tapas por completo con "
+                                    "otra, esa captura puede congelarse o verse negra hasta que vuelva a "
+                                    "estar visible (limitación de Chrome). El audio y la transcripción no "
+                                    "se ven afectados."
                                 )
                     else:
                         self.safe_print(f"  [WARN] Ventana '{target}' no encontrada en este momento. Se usará pantalla completa.")
