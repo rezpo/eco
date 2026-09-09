@@ -200,21 +200,27 @@ def get_visible_windows():
         let windowName = info[kCGWindowName as String] as? String ?? ""
         let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
         
+        var x = 0.0
+        var y = 0.0
         var width = 0.0
         var height = 0.0
         if let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] {
+            x = boundsDict["X"] ?? 0.0
+            y = boundsDict["Y"] ?? 0.0
             width = boundsDict["Width"] ?? 0.0
             height = boundsDict["Height"] ?? 0.0
         }
-        
+
         guard width > 200 && height > 200 else { continue }
         guard !excludeOwners.contains(ownerName) else { continue }
-        
+
         results.append([
             "id": windowID,
             "owner": ownerName,
             "title": windowName,
             "isOnscreen": isOnscreen,
+            "x": x,
+            "y": y,
             "width": width,
             "height": height
         ])
@@ -307,27 +313,35 @@ def find_window(query):
         let windowName = info[kCGWindowName as String] as? String ?? ""
         let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
         
+        var x = 0.0
+        var y = 0.0
         var width = 0.0
         var height = 0.0
         if let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] {
+            x = boundsDict["X"] ?? 0.0
+            y = boundsDict["Y"] ?? 0.0
             width = boundsDict["Width"] ?? 0.0
             height = boundsDict["Height"] ?? 0.0
         }
-        
+
         guard width > 200 && height > 200 else { continue }
         guard !excludeOwners.contains(ownerName) else { continue }
-        
+
         let matchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let isIdMatch = String(windowID) == matchQuery
         let isOwnerMatch = ownerName.lowercased().contains(matchQuery)
         let isTitleMatch = windowName.lowercased().contains(matchQuery)
-        
+
         if isIdMatch || isOwnerMatch || isTitleMatch {
             matches.append([
                 "id": windowID,
                 "owner": ownerName,
                 "title": windowName,
                 "isOnscreen": isOnscreen,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
                 "area": width * height,
                 "hasTitle": !windowName.isEmpty
             ])
@@ -357,7 +371,15 @@ def find_window(query):
     }
 
     if let bestMatch = matches.first {
-        let result: [String: Any] = ["id": bestMatch["id"]!, "owner": bestMatch["owner"]!, "title": bestMatch["title"]!]
+        let result: [String: Any] = [
+            "id": bestMatch["id"]!,
+            "owner": bestMatch["owner"]!,
+            "title": bestMatch["title"]!,
+            "x": bestMatch["x"]!,
+            "y": bestMatch["y"]!,
+            "width": bestMatch["width"]!,
+            "height": bestMatch["height"]!
+        ]
         if let jsonData = try? JSONSerialization.data(withJSONObject: result, options: []),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             print(jsonString)
@@ -453,6 +475,26 @@ class Eco:
         self.paused = False
         self.screenshots_dir = None
 
+    def _capture_window(self, window_id, owner, bounds, filepath):
+        """Intenta capturar una ventana específica. Si es de Chrome y tiene
+        depuración remota activa, usa CDP (robusto ante video oculto);
+        si no, cae al método clásico screencapture -l<id>."""
+        import subprocess
+        import chrome_capture
+
+        if owner == "Google Chrome" and bounds:
+            try:
+                if chrome_capture.capture_chrome_window_screenshot(bounds, filepath):
+                    return True
+            except Exception:
+                pass
+
+        try:
+            subprocess.run(["screencapture", "-x", f"-l{window_id}", "-t", "jpg", filepath], check=True)
+            return True
+        except Exception:
+            return False
+
     def _take_screenshots_loop(self):
         """Loop de captura de pantalla periódica en segundo plano."""
         import subprocess
@@ -461,7 +503,7 @@ class Eco:
         import glob
         import shutil
         from pathlib import Path
-        
+
         # Generar ruta del directorio de screenshots al lado del archivo WAV
         wav_path = Path(self.output_file)
         self.screenshots_dir = wav_path.parent / f"{wav_path.stem}_screenshots"
@@ -477,8 +519,13 @@ class Eco:
         time.sleep(1.0)
 
         current_window_id = None
+        current_window_owner = None
+        current_window_bounds = None
         last_logged_state = None  # Puede ser 'window', 'window_obscured', 'window_unavailable', 'fullscreen'
-        
+
+        def _bounds_of(w_info):
+            return {"x": w_info["x"], "y": w_info["y"], "width": w_info["width"], "height": w_info["height"]}
+
         # Inicializar la última captura exitosa desde el disco si existe
         existing_shots = sorted(glob.glob(str(self.screenshots_dir / "*.jpg")))
         last_successful_filepath = existing_shots[-1] if existing_shots else None
@@ -488,6 +535,8 @@ class Eco:
             w_info = find_window(self.window_query)
             if w_info:
                 current_window_id = w_info["id"]
+                current_window_owner = w_info["owner"]
+                current_window_bounds = _bounds_of(w_info)
                 msg_init = f"  [*] Capturando ventana: ID {current_window_id} ({w_info['owner']} - {w_info['title']})"
                 if hasattr(self, '_sidekick') and self._sidekick:
                     self._sidekick.safe_print(msg_init)
@@ -503,44 +552,45 @@ class Eco:
                 last_logged_state = 'window_unavailable'
 
         last_capture_time = 0
-        
+
         while self.recording:
             if self.paused:
                 time.sleep(0.1)
                 continue
-                
+
             now = time.time()
             if now - last_capture_time >= self.screenshot_interval:
                 timestamp = datetime.fromtimestamp(now).strftime("%Y%m%d_%H%M%S")
                 filename = f"screenshot_{timestamp}.jpg"
                 filepath = str(self.screenshots_dir / filename)
-                
+
                 if self.window_query:
                     captured = False
-                    
+
                     # Si no tenemos ID, intentamos resolverlo
                     if current_window_id is None:
                         w_info = find_window(self.window_query)
                         if w_info:
                             current_window_id = w_info["id"]
-                    
+                            current_window_owner = w_info["owner"]
+                            current_window_bounds = _bounds_of(w_info)
+
                     if current_window_id is not None:
-                        try:
-                            # Intentar capturar la ventana
-                            subprocess.run(["screencapture", "-x", f"-l{current_window_id}", "-t", "jpg", filepath], check=True)
-                            captured = True
-                        except Exception:
+                        captured = self._capture_window(
+                            current_window_id, current_window_owner, current_window_bounds, filepath
+                        )
+                        if not captured:
                             # Re-resolver ID por si cambió o hubo un glitch de transición
                             w_info = find_window(self.window_query)
                             if w_info:
                                 current_window_id = w_info["id"]
+                                current_window_owner = w_info["owner"]
+                                current_window_bounds = _bounds_of(w_info)
                                 # Esperar medio segundo antes del reintento
                                 time.sleep(0.5)
-                                try:
-                                    subprocess.run(["screencapture", "-x", f"-l{current_window_id}", "-t", "jpg", filepath], check=True)
-                                    captured = True
-                                except Exception:
-                                    pass
+                                captured = self._capture_window(
+                                    current_window_id, current_window_owner, current_window_bounds, filepath
+                                )
 
                     if captured:
                         last_successful_filepath = filepath
@@ -978,6 +1028,15 @@ Ejemplos:
 
     if args.window:
         args.screenshots = True
+
+        w_info = find_window(args.window)
+        if w_info and w_info.get("owner") == "Google Chrome":
+            import chrome_capture
+            if args.window.strip().isdigit():
+                print("  [WARN] Pasaste un ID de ventana: si Chrome se reinicia para activar "
+                      "la depuración remota, ese ID cambiará. Usa un nombre (ej. --window \"Chrome\") "
+                      "en vez de un ID al capturar ventanas de Chrome.")
+            chrome_capture.ensure_chrome_debugging()
 
     if not args.output and not args.input and not args.both:
         parser.print_help()

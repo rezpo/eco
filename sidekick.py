@@ -1321,6 +1321,15 @@ class Sidekick:
                     w_info = find_window(target)
                     if w_info:
                         self.safe_print(f"  [+] Capturando ventana: ID {w_info['id']} ({w_info['owner']} - {w_info['title']})")
+                        if w_info.get("owner") == "Google Chrome":
+                            import chrome_capture
+                            if not chrome_capture.is_debug_port_open():
+                                self.safe_print(
+                                    "  [i] Si esta ventana reproduce video, las capturas pueden fallar al "
+                                    "quedar oculta detrás de otra. Para evitarlo, sal (/quit) y vuelve a "
+                                    "iniciar eco con --window apuntando a esta ventana: te ofrecerá "
+                                    "reiniciar Chrome con depuración remota automáticamente."
+                                )
                     else:
                         self.safe_print(f"  [WARN] Ventana '{target}' no encontrada en este momento. Se usará pantalla completa.")
                 else:

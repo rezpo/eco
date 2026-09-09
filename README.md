@@ -210,6 +210,25 @@ Las capturas se guardan como `.jpg` en una carpeta `<nombre_del_audio>_screensho
 eco --output --window "Zoom" --screenshot-interval 15 --start
 ```
 
+### Capturar Chrome con video reproduciéndose
+
+Cuando una ventana de Chrome con un video corriendo (una llamada, un tutorial, YouTube) queda **completamente oculta** detrás de otra ventana, la captura de pantalla normal de macOS deja de poder leer ese video correctamente — es una limitación de cómo Chrome compone video acelerado por hardware, no un bug de Eco. Para evitarlo, cuando detectas una ventana de Chrome con `--window`, Eco puede usar el propio protocolo de depuración de Chrome (CDP) para pedirle el screenshot directamente, sin pasar por macOS — esto sí funciona con la ventana completamente oculta.
+
+Esto requiere que Chrome corra con depuración remota activada (un flag que solo se puede fijar al iniciar el proceso). Si no la tiene, Eco te lo pregunta:
+
+```
+[Chrome] Para que las capturas de video no se rompan al cambiar de ventana, Chrome
+necesita reiniciarse con depuración remota activada.
+[Chrome] ¿Reiniciar Chrome ahora? [s/N]
+```
+
+Si aceptas, Eco cierra Chrome y lo vuelve a abrir (mismo perfil, mismas extensiones y sesiones) con el flag activado.
+
+> [!WARNING]
+> **Revisa `chrome://settings/onStartup` antes de aceptar.** Si no tienes activado "Continuar donde lo dejaste", cerrar Chrome para reiniciarlo **pierde las pestañas abiertas** (no el historial: esas páginas siguen en `Cmd+Y`, pero como pestañas activas desaparecen). Eco detecta esto y te avisa explícitamente antes de preguntar, pero la decisión de continuar es tuya.
+
+Si respondes que no (o el reinicio falla), Eco sigue funcionando con el método clásico de captura — solo que el video puede fallar mientras la ventana esté oculta, como se describió arriba.
+
 ## Compresión y archivado de grabaciones
 
 Por defecto, al terminar cada grabación Eco convierte el WAV a **Opus mono (32 kbps)** con `ffmpeg` y borra el WAV original — el audio de voz no pierde inteligibilidad ni precisión de transcripción, pero el archivo pesa ~50x menos. Usa `--no-compress` para conservar el WAV sin tocar, o `--keep-wav` para quedarte con ambos archivos. Si `ffmpeg` no está instalado, Eco avisa y simplemente conserva el WAV (nunca falla la grabación por esto).
