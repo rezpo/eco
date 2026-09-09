@@ -1,6 +1,6 @@
 # Eco
 
-Grabador de audio interno para macOS. Captura audio del sistema (Meet, videos, música) usando BlackHole como driver de audio virtual.
+Grabador de audio interno para macOS. Captura audio del sistema (Meet, videos, música) usando BlackHole como driver de audio virtual, con transcripción y asistente de IA opcionales, y capturas de pantalla periódicas de la reunión.
 
 ## Requisitos
 
@@ -8,6 +8,7 @@ Grabador de audio interno para macOS. Captura audio del sistema (Meet, videos, m
 - Python 3.9+
 - Homebrew
 - BlackHole 2ch (se instala automáticamente)
+- ffmpeg (se instala automáticamente; opcional — solo se usa para comprimir las grabaciones a Opus)
 
 > [!WARNING]
 > **Permisos de Administrador Requeridos:** La instalación del driver virtual **BlackHole 2ch** requiere privilegios de administrador (`sudo`) en macOS para poder copiar el controlador en la carpeta del sistema. Si estás en una Mac corporativa sin accesos de administrador, deberás solicitar a tu departamento de IT que instale BlackHole 2ch por ti o, alternativamente, utilizar Eco únicamente en modo micrófono (`eco --input`).
@@ -116,31 +117,133 @@ eco --both --channels split
 ### Opciones
 
 ```
---output          Graba solo audio del sistema (BlackHole)
---input           Graba solo micrófono
---both            Graba ambos (sistema + micrófono)
---duration N      Duración en segundos (default: hasta Ctrl+C)
---output-file F   Nombre del archivo WAV
---device NAME     Dispositivo específico (ver --list-devices)
---channels MODE   'split' (L/R) o 'mix' (mezclado) - solo con --both
---sample-rate N   Frecuencia de muestreo (default: 48000)
---list-devices    Muestra dispositivos de audio disponibles
+--output              Graba solo audio del sistema (BlackHole)
+--input               Graba solo micrófono
+--both                Graba ambos (sistema + micrófono)
+--duration N          Duración en segundos (default: hasta Ctrl+C)
+--output-file F       Nombre del archivo de audio
+--device NAME         Dispositivo específico (ver --list-devices)
+--channels MODE       'split' (L/R) o 'mix' (mezclado) - solo con --both
+--sample-rate N       Frecuencia de muestreo (default: 48000)
+--list-devices        Muestra dispositivos de audio disponibles
+--start               Inicia la grabación de inmediato (sin esto, en modo
+                      standalone Eco solo se prepara y no graba nada)
+
+Asistente de IA (transcripción + LLM)
+--llm PROVEEDOR       Activa el sidekick: anthropic, openai, mimo o minimax
+--silence-timeout N   Segundos de silencio antes de auto-cerrar (default: 120,
+                      0 para desactivar)
+
+Capturas de pantalla
+--screenshots           Toma capturas de pantalla periódicas de la reunión
+--screenshot-interval N Intervalo en segundos entre capturas (default: 10)
+--window NAME_OR_ID     Limita las capturas a una ventana/app (implica
+                        --screenshots). Usa --window list para ver ventanas
+
+Compresión de audio
+--no-compress         Conserva el WAV sin comprimir (por defecto se
+                      convierte a Opus y se borra el WAV)
+--keep-wav            Conserva el WAV original además del Opus comprimido
+--audio-bitrate RATE  Bitrate del Opus resultante (default: 32k)
 ```
 
 ### Ejemplos
 
 ```bash
 # Grabar 2 minutos de Meet
-eco --output --duration 120
+eco --output --duration 120 --start
 
 # Grabar con nombre personalizado
-eco --output --output-file reunion.wav
+eco --output --output-file reunion.wav --start
 
 # Ver dispositivos disponibles
 eco --list-devices
 
 # Usar dispositivo específico
-eco --input --device "soundcore"
+eco --input --device "soundcore" --start
+
+# Grabar + transcribir + preguntarle a un LLM durante la reunión
+eco --output --llm mimo --start
+
+# Grabar con capturas de pantalla de una ventana específica
+eco --output --window "Zoom" --start
+
+# Conservar el WAV original sin comprimir
+eco --output --no-compress --start
+```
+
+## Asistente de reuniones (IA)
+
+Con `--llm <proveedor>` (`anthropic`, `openai`, `mimo` o `minimax`), Eco levanta además **Sidekick**: transcribe el audio en tiempo real con Deepgram y abre una interfaz interactiva en la terminal donde puedes preguntarle al LLM sobre lo que se está hablando.
+
+```bash
+eco --output --llm mimo --start
+```
+
+Dentro de la interfaz, cualquier texto que no empiece con `/` se envía como pregunta al LLM (junto con el contexto reciente de la transcripción y, si hay capturas de pantalla activas, las últimas dos imágenes). Los comandos disponibles son:
+
+| Comando | Acción |
+|---------|--------|
+| `/context` | Ver el contexto de transcripción actual |
+| `/clear-context` | Limpiar el contexto |
+| `/output-dir <ruta>` | Cambiar el directorio de salida de los archivos |
+| `/start` | Iniciar grabación y transcripción |
+| `/pause` | Pausar grabación y transcripción |
+| `/resume` | Reanudar grabación y transcripción |
+| `/stop` | Detener grabación y transcripción |
+| `/silence-timeout <s>` | Configurar el tiempo de silencio antes de auto-cerrar |
+| `/window-list` | Listar ventanas visibles de macOS y sus IDs |
+| `/screencapture` | Elegir (o cambiar) qué ventana capturar periódicamente |
+| `/help` | Mostrar la ayuda |
+| `/quit` | Salir del sidekick |
+
+Requiere `DEEPGRAM_API_KEY` configurada (ver [Configuración de API Keys](#configuración-de-api-keys)) y la API key del proveedor de LLM elegido.
+
+## Capturas de pantalla
+
+Con `--screenshots`, Eco toma una captura de pantalla completa cada `--screenshot-interval` segundos (10s por defecto) mientras graba. Con `--window <nombre, título o ID>` limita las capturas a una sola ventana o aplicación (y activa `--screenshots` automáticamente); usa `--window list` para ver las ventanas disponibles con sus IDs.
+
+Las capturas se guardan como `.jpg` en una carpeta `<nombre_del_audio>_screenshots/` junto al archivo de audio. Si la ventana elegida se minimiza u oculta temporalmente, Eco reutiliza la última captura válida en vez de fotografiar el escritorio equivocado.
+
+```bash
+# Capturar solo la ventana de Zoom cada 15 segundos
+eco --output --window "Zoom" --screenshot-interval 15 --start
+```
+
+### Capturar Chrome con video reproduciéndose
+
+Cuando una ventana de Chrome con un video corriendo (una llamada, un tutorial, YouTube) queda **completamente oculta** detrás de otra ventana, la captura de pantalla normal de macOS deja de poder leer ese video correctamente — es una limitación de cómo Chrome compone video acelerado por hardware, no un bug de Eco. Para evitarlo, cuando detectas una ventana de Chrome con `--window`, Eco puede usar el propio protocolo de depuración de Chrome (CDP) para pedirle el screenshot directamente, sin pasar por macOS — esto sí funciona con la ventana completamente oculta.
+
+Esto requiere que Chrome corra con depuración remota activada (un flag que solo se puede fijar al iniciar el proceso). Si no la tiene, Eco te lo pregunta:
+
+```
+[Chrome] Para que las capturas de video no se rompan al cambiar de ventana, Chrome
+necesita reiniciarse con depuración remota activada.
+[Chrome] ¿Reiniciar Chrome ahora? [s/N]
+```
+
+Si aceptas, Eco cierra Chrome y lo vuelve a abrir (mismo perfil, mismas extensiones y sesiones) con el flag activado.
+
+> [!WARNING]
+> **Revisa `chrome://settings/onStartup` antes de aceptar.** Si no tienes activado "Continuar donde lo dejaste", cerrar Chrome para reiniciarlo **pierde las pestañas abiertas** (no el historial: esas páginas siguen en `Cmd+Y`, pero como pestañas activas desaparecen). Eco detecta esto y te avisa explícitamente antes de preguntar, pero la decisión de continuar es tuya.
+
+Si respondes que no (o el reinicio falla), Eco sigue funcionando con el método clásico de captura — solo que el video puede fallar mientras la ventana esté oculta, como se describió arriba.
+
+## Compresión y archivado de grabaciones
+
+Por defecto, al terminar cada grabación Eco convierte el WAV a **Opus mono (32 kbps)** con `ffmpeg` y borra el WAV original — el audio de voz no pierde inteligibilidad ni precisión de transcripción, pero el archivo pesa ~50x menos. Usa `--no-compress` para conservar el WAV sin tocar, o `--keep-wav` para quedarte con ambos archivos. Si `ffmpeg` no está instalado, Eco avisa y simplemente conserva el WAV (nunca falla la grabación por esto).
+
+Para comprimir en bloque grabaciones antiguas que ya tengas en disco, usa el script incluido `compress_archive.py`:
+
+```bash
+# Simula (no escribe nada) y muestra el ahorro estimado
+python compress_archive.py ~/Desktop
+
+# Convierte de verdad
+python compress_archive.py ~/Desktop --apply
+
+# Convierte y borra los WAV originales (solo tras verificar cada Opus)
+python compress_archive.py ~/Desktop --apply --delete-originals
 ```
 
 ## Cómo funciona
@@ -182,9 +285,8 @@ macOS no soporta cambio de volumen en Multi-Output Devices. Ajustar volumen indi
 
 ## Formato de salida
 
-- **Formato**: WAV (PCM 16-bit)
-- **Sample rate**: 48000 Hz (configurable con --sample-rate)
-- **Canales**: 2 (estéreo)
+- **Captura**: WAV PCM 16-bit, 48000 Hz (configurable con `--sample-rate`), 2 canales (estéreo)
+- **Archivo final**: Opus mono 32 kbps por defecto (usa `--no-compress` o `--keep-wav` para conservar el WAV)
 
 ## Licencia
 

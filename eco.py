@@ -33,6 +33,65 @@ DEFAULT_SAMPLE_RATE = 48000
 DEFAULT_CHANNELS = 2
 BLOCK_SIZE = 1024
 
+# Compresión de audio: el WAV PCM es necesario durante la captura, pero como
+# archivo es voz guardada a 1536 kbps. Opus mono a 32 kbps la reduce ~54x sin
+# perder inteligibilidad ni precisión de transcripción.
+DEFAULT_AUDIO_BITRATE = "32k"
+
+
+def compress_audio(wav_path, bitrate=DEFAULT_AUDIO_BITRATE, keep_original=False,
+                   printer=None):
+    """Convierte un WAV a Opus mono y borra el original si la conversión es válida.
+
+    Devuelve la ruta del .opus, o la del WAV si no se pudo convertir. Nunca borra
+    el original sin antes verificar que el resultado existe y tiene contenido.
+    """
+    import shutil
+    import subprocess
+
+    say = printer or print
+    wav_path = Path(wav_path)
+
+    if not wav_path.exists():
+        return str(wav_path)
+
+    if shutil.which("ffmpeg") is None:
+        say("  [WARN] ffmpeg no encontrado, se conserva el WAV sin comprimir")
+        return str(wav_path)
+
+    opus_path = wav_path.with_suffix(".opus")
+    original_size = wav_path.stat().st_size
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-y",
+             "-i", str(wav_path),
+             "-c:a", "libopus", "-b:a", bitrate, "-ac", "1",
+             str(opus_path)],
+            check=True, capture_output=True, timeout=1800,
+        )
+    except Exception as e:
+        say(f"  [WARN] No se pudo comprimir el audio, se conserva el WAV: {e}")
+        if opus_path.exists():
+            opus_path.unlink()
+        return str(wav_path)
+
+    if not opus_path.exists() or opus_path.stat().st_size == 0:
+        say("  [WARN] La compresión produjo un archivo vacío, se conserva el WAV")
+        if opus_path.exists():
+            opus_path.unlink()
+        return str(wav_path)
+
+    new_size = opus_path.stat().st_size
+    ratio = original_size / new_size if new_size else 0
+    say(f"  Comprimido a Opus {bitrate} mono: "
+        f"{original_size / 1048576:.1f} MB -> {new_size / 1048576:.1f} MB ({ratio:.0f}x)")
+
+    if not keep_original:
+        wav_path.unlink()
+
+    return str(opus_path)
+
 
 def list_devices():
     """Muestra dispositivos de audio disponibles."""
@@ -122,8 +181,8 @@ def find_both_device():
     return find_system_device()
 
 
-def list_visible_windows():
-    """Muestra una lista de ventanas visibles en el sistema y sus IDs."""
+def get_visible_windows():
+    """Retorna una lista de ventanas visibles (dicts con id, owner, title, etc)."""
     swift_code = """
     import Cocoa
     import CoreGraphics
@@ -141,21 +200,27 @@ def list_visible_windows():
         let windowName = info[kCGWindowName as String] as? String ?? ""
         let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
         
+        var x = 0.0
+        var y = 0.0
         var width = 0.0
         var height = 0.0
         if let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] {
+            x = boundsDict["X"] ?? 0.0
+            y = boundsDict["Y"] ?? 0.0
             width = boundsDict["Width"] ?? 0.0
             height = boundsDict["Height"] ?? 0.0
         }
-        
+
         guard width > 200 && height > 200 else { continue }
         guard !excludeOwners.contains(ownerName) else { continue }
-        
+
         results.append([
             "id": windowID,
             "owner": ownerName,
             "title": windowName,
             "isOnscreen": isOnscreen,
+            "x": x,
+            "y": y,
             "width": width,
             "height": height
         ])
@@ -196,7 +261,15 @@ def list_visible_windows():
     import json
     try:
         res = subprocess.run(["swift", "-"], input=swift_code, text=True, capture_output=True, check=True)
-        windows = json.loads(res.stdout.strip())
+        return json.loads(res.stdout.strip())
+    except Exception as e:
+        return []
+
+
+def list_visible_windows():
+    """Muestra una lista de ventanas visibles en el sistema y sus IDs."""
+    try:
+        windows = get_visible_windows()
         if not windows:
             print("\n  No se encontraron ventanas visibles.")
             return
@@ -240,27 +313,35 @@ def find_window(query):
         let windowName = info[kCGWindowName as String] as? String ?? ""
         let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
         
+        var x = 0.0
+        var y = 0.0
         var width = 0.0
         var height = 0.0
         if let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] {
+            x = boundsDict["X"] ?? 0.0
+            y = boundsDict["Y"] ?? 0.0
             width = boundsDict["Width"] ?? 0.0
             height = boundsDict["Height"] ?? 0.0
         }
-        
+
         guard width > 200 && height > 200 else { continue }
         guard !excludeOwners.contains(ownerName) else { continue }
-        
+
         let matchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let isIdMatch = String(windowID) == matchQuery
         let isOwnerMatch = ownerName.lowercased().contains(matchQuery)
         let isTitleMatch = windowName.lowercased().contains(matchQuery)
-        
+
         if isIdMatch || isOwnerMatch || isTitleMatch {
             matches.append([
                 "id": windowID,
                 "owner": ownerName,
                 "title": windowName,
                 "isOnscreen": isOnscreen,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
                 "area": width * height,
                 "hasTitle": !windowName.isEmpty
             ])
@@ -290,7 +371,15 @@ def find_window(query):
     }
 
     if let bestMatch = matches.first {
-        let result: [String: Any] = ["id": bestMatch["id"]!, "owner": bestMatch["owner"]!, "title": bestMatch["title"]!]
+        let result: [String: Any] = [
+            "id": bestMatch["id"]!,
+            "owner": bestMatch["owner"]!,
+            "title": bestMatch["title"]!,
+            "x": bestMatch["x"]!,
+            "y": bestMatch["y"]!,
+            "width": bestMatch["width"]!,
+            "height": bestMatch["height"]!
+        ]
         if let jsonData = try? JSONSerialization.data(withJSONObject: result, options: []),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             print(jsonString)
@@ -315,7 +404,9 @@ class Eco:
 
     def __init__(self, mode, channels_mode="mix", device_idx=None,
                  sample_rate=DEFAULT_SAMPLE_RATE, duration=None, output_file=None,
-                 screenshots=False, screenshot_interval=10, window_query=None):
+                 screenshots=False, screenshot_interval=10, window_query=None,
+                 compress=True, audio_bitrate=DEFAULT_AUDIO_BITRATE,
+                 keep_wav=False):
         self.mode = mode
         self.channels_mode = channels_mode
         self.sample_rate = sample_rate
@@ -323,14 +414,7 @@ class Eco:
         self.recording = False
         self.start_time = None
         self.frames_written = 0
-        self.stream = None
         self.file = None
-        self.buffer = []
-        self.system_buffer = []
-        self.mic_buffer = []
-        self.system_stream = None
-        self.mic_stream = None
-        self.split_stream = None
         self._stopped = False
         
         self.paused = False
@@ -342,6 +426,10 @@ class Eco:
         self.window_query = window_query
         self.screenshots_dir = None
         self._screenshot_thread = None
+
+        self.compress = compress
+        self.audio_bitrate = audio_bitrate
+        self.keep_wav = keep_wav
 
         self.output_dir = str(Path.home() / "Desktop")
         self.output_file_param = output_file
@@ -356,9 +444,17 @@ class Eco:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.output_file = str(Path(self.output_dir) / f"eco_{timestamp}.wav")
 
-        if device_idx is not None:
+        # "both" + "mix" siempre necesita dos dispositivos por separado (sistema
+        # y micrófono): un solo --device no alcanza para elegir ambos, así que
+        # se detectan automáticamente sin importar si se pasó device_idx.
+        needs_both_mix_detection = self.mode == "both" and self.channels_mode == "mix"
+
+        if device_idx is not None and not needs_both_mix_detection:
             self.device_idx = device_idx
         else:
+            if device_idx is not None and needs_both_mix_detection:
+                print("  [WARN] --device no aplica con --both --channels mix "
+                      "(se detectan automáticamente el audio del sistema y el micrófono)")
             self._auto_detect_device()
 
     def reset_output_file(self):
@@ -379,6 +475,26 @@ class Eco:
         self.paused = False
         self.screenshots_dir = None
 
+    def _capture_window(self, window_id, owner, bounds, filepath):
+        """Intenta capturar una ventana específica. Si es de Chrome y tiene
+        depuración remota activa, usa CDP (robusto ante video oculto);
+        si no, cae al método clásico screencapture -l<id>."""
+        import subprocess
+        import chrome_capture
+
+        if owner == "Google Chrome" and bounds:
+            try:
+                if chrome_capture.capture_chrome_window_screenshot(bounds, filepath):
+                    return True
+            except Exception:
+                pass
+
+        try:
+            subprocess.run(["screencapture", "-x", f"-l{window_id}", "-t", "jpg", filepath], check=True)
+            return True
+        except Exception:
+            return False
+
     def _take_screenshots_loop(self):
         """Loop de captura de pantalla periódica en segundo plano."""
         import subprocess
@@ -387,7 +503,7 @@ class Eco:
         import glob
         import shutil
         from pathlib import Path
-        
+
         # Generar ruta del directorio de screenshots al lado del archivo WAV
         wav_path = Path(self.output_file)
         self.screenshots_dir = wav_path.parent / f"{wav_path.stem}_screenshots"
@@ -403,8 +519,13 @@ class Eco:
         time.sleep(1.0)
 
         current_window_id = None
+        current_window_owner = None
+        current_window_bounds = None
         last_logged_state = None  # Puede ser 'window', 'window_obscured', 'window_unavailable', 'fullscreen'
-        
+
+        def _bounds_of(w_info):
+            return {"x": w_info["x"], "y": w_info["y"], "width": w_info["width"], "height": w_info["height"]}
+
         # Inicializar la última captura exitosa desde el disco si existe
         existing_shots = sorted(glob.glob(str(self.screenshots_dir / "*.jpg")))
         last_successful_filepath = existing_shots[-1] if existing_shots else None
@@ -414,6 +535,8 @@ class Eco:
             w_info = find_window(self.window_query)
             if w_info:
                 current_window_id = w_info["id"]
+                current_window_owner = w_info["owner"]
+                current_window_bounds = _bounds_of(w_info)
                 msg_init = f"  [*] Capturando ventana: ID {current_window_id} ({w_info['owner']} - {w_info['title']})"
                 if hasattr(self, '_sidekick') and self._sidekick:
                     self._sidekick.safe_print(msg_init)
@@ -429,44 +552,45 @@ class Eco:
                 last_logged_state = 'window_unavailable'
 
         last_capture_time = 0
-        
+
         while self.recording:
             if self.paused:
                 time.sleep(0.1)
                 continue
-                
+
             now = time.time()
             if now - last_capture_time >= self.screenshot_interval:
                 timestamp = datetime.fromtimestamp(now).strftime("%Y%m%d_%H%M%S")
                 filename = f"screenshot_{timestamp}.jpg"
                 filepath = str(self.screenshots_dir / filename)
-                
+
                 if self.window_query:
                     captured = False
-                    
+
                     # Si no tenemos ID, intentamos resolverlo
                     if current_window_id is None:
                         w_info = find_window(self.window_query)
                         if w_info:
                             current_window_id = w_info["id"]
-                    
+                            current_window_owner = w_info["owner"]
+                            current_window_bounds = _bounds_of(w_info)
+
                     if current_window_id is not None:
-                        try:
-                            # Intentar capturar la ventana
-                            subprocess.run(["screencapture", "-x", f"-l{current_window_id}", "-t", "jpg", filepath], check=True)
-                            captured = True
-                        except Exception:
+                        captured = self._capture_window(
+                            current_window_id, current_window_owner, current_window_bounds, filepath
+                        )
+                        if not captured:
                             # Re-resolver ID por si cambió o hubo un glitch de transición
                             w_info = find_window(self.window_query)
                             if w_info:
                                 current_window_id = w_info["id"]
+                                current_window_owner = w_info["owner"]
+                                current_window_bounds = _bounds_of(w_info)
                                 # Esperar medio segundo antes del reintento
                                 time.sleep(0.5)
-                                try:
-                                    subprocess.run(["screencapture", "-x", f"-l{current_window_id}", "-t", "jpg", filepath], check=True)
-                                    captured = True
-                                except Exception:
-                                    pass
+                                captured = self._capture_window(
+                                    current_window_id, current_window_owner, current_window_bounds, filepath
+                                )
 
                     if captured:
                         last_successful_filepath = filepath
@@ -783,6 +907,21 @@ class Eco:
                 else:
                     print(msg)
 
+        # Comprimir antes del resumen para que el tamaño informado sea el final
+        if self.compress:
+            def _say(msg):
+                if hasattr(self, '_sidekick') and self._sidekick:
+                    self._sidekick.safe_print(msg)
+                else:
+                    print(msg)
+
+            self.output_file = compress_audio(
+                self.output_file,
+                bitrate=self.audio_bitrate,
+                keep_original=self.keep_wav,
+                printer=_say,
+            )
+
         output_path = Path(self.output_file)
         txt_path = output_path.with_suffix(".txt")
         if output_path.exists():
@@ -823,6 +962,8 @@ Ejemplos:
   %(prog)s --output --output-file reunion  Guardar como reunion.wav
   %(prog)s --list-devices                  Ver dispositivos de audio
   %(prog)s --output --llm mimo             Grabar + transcribir + LLM
+  %(prog)s --output --no-compress          Conservar el WAV sin comprimir
+  %(prog)s --output --audio-bitrate 24k    Comprimir más agresivamente
         """
     )
 
@@ -862,6 +1003,14 @@ Ejemplos:
     options.add_argument("--window", metavar="NAME_OR_ID",
                          help="Filtra las capturas de pantalla por nombre de aplicación, título de ventana o ID. Usa 'list' para ver las ventanas disponibles.")
 
+    audio_opts = parser.add_argument_group("archivo de audio")
+    audio_opts.add_argument("--no-compress", action="store_true",
+                            help="Conserva el WAV sin comprimir (por defecto se convierte a Opus)")
+    audio_opts.add_argument("--keep-wav", action="store_true",
+                            help="Guarda el WAV original además del Opus comprimido")
+    audio_opts.add_argument("--audio-bitrate", default=DEFAULT_AUDIO_BITRATE, metavar="RATE",
+                            help=f"Bitrate del Opus resultante (default: {DEFAULT_AUDIO_BITRATE})")
+
     args = parser.parse_args()
 
     print(f"\n  ╔═══════════════════════════════════════╗")
@@ -879,6 +1028,15 @@ Ejemplos:
 
     if args.window:
         args.screenshots = True
+
+        w_info = find_window(args.window)
+        if w_info and w_info.get("owner") == "Google Chrome":
+            import chrome_capture
+            if args.window.strip().isdigit():
+                print("  [WARN] Pasaste un ID de ventana: si Chrome se reinicia para activar "
+                      "la depuración remota, ese ID cambiará. Usa un nombre (ej. --window \"Chrome\") "
+                      "en vez de un ID al capturar ventanas de Chrome.")
+            chrome_capture.ensure_chrome_debugging()
 
     if not args.output and not args.input and not args.both:
         parser.print_help()
@@ -913,6 +1071,9 @@ Ejemplos:
         screenshots=args.screenshots,
         screenshot_interval=args.screenshot_interval,
         window_query=args.window,
+        compress=not args.no_compress,
+        audio_bitrate=args.audio_bitrate,
+        keep_wav=args.keep_wav,
     )
 
     signal.signal(signal.SIGINT, lambda *_: setattr(grabador, 'recording', False))

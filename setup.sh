@@ -40,6 +40,19 @@ else
     brew install blackhole-2ch
 fi
 
+# Check/install ffmpeg (usado para comprimir las grabaciones WAV a Opus).
+# Es una dependencia opcional: si falla, Eco sigue funcionando y simplemente
+# conserva el WAV sin comprimir, así que no debe abortar la instalación.
+if brew list ffmpeg &> /dev/null; then
+    info "ffmpeg ya está instalado"
+else
+    info "Instalando ffmpeg (compresión de audio a Opus)..."
+    if ! brew install ffmpeg; then
+        warn "No se pudo instalar ffmpeg. Eco funcionará igual, pero guardará"
+        warn "las grabaciones sin comprimir (WAV) en vez de Opus."
+    fi
+fi
+
 # Check/install Python dependencies & CLI package
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

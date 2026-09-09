@@ -27,4 +27,4 @@ dependencies = [
 eco = "eco:main"
 
 [tool.setuptools]
-py-modules = ["eco", "sidekick", "llm_client"]
+py-modules = ["eco", "sidekick", "llm_client", "chrome_capture"]
