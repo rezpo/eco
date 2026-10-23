@@ -12,44 +12,43 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 echo ""
 echo "  ╔═══════════════════════════════════════╗"
-echo "  ║             ECO - Instalación         ║"
+echo "  ║             ECO - Installation        ║"
 echo "  ╚═══════════════════════════════════════╝"
 echo ""
 
 # Check macOS
 if [[ "$(uname)" != "Darwin" ]]; then
-    error "Eco solo funciona en macOS"
+    error "Eco only works on macOS"
     exit 1
 fi
 
-info "Detectado macOS $(sw_vers -productVersion)"
+info "Detected macOS $(sw_vers -productVersion)"
 
 # Check/install Homebrew
 if ! command -v brew &> /dev/null; then
-    warn "Homebrew no encontrado. Instalando..."
+    warn "Homebrew not found. Installing..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 else
-    info "Homebrew encontrado: $(brew --version | head -1)"
+    info "Homebrew found: $(brew --version | head -1)"
 fi
 
 # Check/install BlackHole
 if brew list blackhole-2ch &> /dev/null; then
-    info "BlackHole 2ch ya está instalado"
+    info "BlackHole 2ch is already installed"
 else
-    info "Instalando BlackHole 2ch..."
+    info "Installing BlackHole 2ch..."
     brew install blackhole-2ch
 fi
 
-# Check/install ffmpeg (usado para comprimir las grabaciones WAV a Opus).
-# Es una dependencia opcional: si falla, Eco sigue funcionando y simplemente
-# conserva el WAV sin comprimir, así que no debe abortar la instalación.
+# Check/install ffmpeg (used to compress WAV recordings to Opus).
+# Optional dependency: if it fails, Eco continues working and preserves uncompressed WAV.
 if brew list ffmpeg &> /dev/null; then
-    info "ffmpeg ya está instalado"
+    info "ffmpeg is already installed"
 else
-    info "Instalando ffmpeg (compresión de audio a Opus)..."
+    info "Installing ffmpeg (Opus audio compression)..."
     if ! brew install ffmpeg; then
-        warn "No se pudo instalar ffmpeg. Eco funcionará igual, pero guardará"
-        warn "las grabaciones sin comprimir (WAV) en vez de Opus."
+        warn "Could not install ffmpeg. Eco will still work, but will save"
+        warn "uncompressed recordings (WAV) instead of Opus."
     fi
 fi
 
@@ -57,38 +56,36 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 setup_venv() {
-    warn "No se pudo usar pipx. Instalando usando un entorno virtual manual..."
+    warn "pipx not found or unavailable. Installing using a manual virtual environment..."
     INSTALL_DIR="$HOME/.eco"
     mkdir -p "$INSTALL_DIR"
     
-    info "Creando entorno virtual en $INSTALL_DIR/venv..."
+    info "Creating virtual environment in $INSTALL_DIR/venv..."
     python3 -m venv "$INSTALL_DIR/venv"
     
-    info "Instalando Eco en el entorno virtual..."
+    info "Installing Eco in virtual environment..."
     "$INSTALL_DIR/venv/bin/pip" install --upgrade pip --quiet
     "$INSTALL_DIR/venv/bin/pip" install "$SCRIPT_DIR" --quiet
     
-    # Crear carpeta bin si no existe
     BIN_DIR="$HOME/.local/bin"
     mkdir -p "$BIN_DIR"
     
-    info "Creando enlace en $BIN_DIR/eco..."
+    info "Creating symlink at $BIN_DIR/eco..."
     ln -sf "$INSTALL_DIR/venv/bin/eco" "$BIN_DIR/eco"
     
-    warn "Asegúrate de que $BIN_DIR esté en tu PATH."
-    warn "Puedes agregarlo ejecutando: echo 'export PATH=\"\$PATH:\$HOME/.local/bin\"' >> ~/.zshrc"
+    warn "Ensure $BIN_DIR is in your PATH."
+    warn "You can add it by running: echo 'export PATH=\"\$PATH:\$HOME/.local/bin\"' >> ~/.zshrc"
 }
 
-info "Instalando Eco CLI..."
+info "Installing Eco CLI..."
 if command -v pipx &> /dev/null; then
-    info "pipx detectado. Instalando con pipx..."
+    info "pipx detected. Installing with pipx..."
     pipx uninstall eco &> /dev/null || true
     pipx install "$SCRIPT_DIR" --force
     pipx ensurepath
 elif command -v brew &> /dev/null; then
-    info "pipx no detectado. Intentando instalar pipx via Homebrew..."
+    info "pipx not detected. Attempting to install pipx via Homebrew..."
     brew install pipx
-    # Obtener el path de pipx instalado por brew
     BREW_PREFIX=$(brew --prefix)
     PIPX_PATH="$BREW_PREFIX/bin/pipx"
     if [ -f "$PIPX_PATH" ]; then
@@ -104,27 +101,28 @@ fi
 
 echo ""
 echo "  ╔═══════════════════════════════════════════════════════════════╗"
-echo "  ║                    INSTALACIÓN COMPLETA                       ║"
+echo "  ║                   INSTALLATION COMPLETE                       ║"
 echo "  ╠═══════════════════════════════════════════════════════════════╣"
 echo "  ║                                                               ║"
-echo "  ║  Siguiente paso - Configurar Multi-Output Device:             ║"
+echo "  ║  Next Step - Configure Multi-Output Device:                   ║"
 echo "  ║                                                               ║"
-echo "  ║  1. Abrir Audio MIDI Setup (Spotlight → 'Audio MIDI Setup')   ║"
-echo "  ║  2. Click '+' → 'Create Multi-Output Device'                  ║"
-echo "  ║  3. Marcar: BlackHole 2ch + tus headphones/altavoces          ║"
-echo "  ║  4. Asegurar que Built-in Output esté arriba (Clock Source)    ║"
-echo "  ║  5. Habilitar 'Drift Correction' en BlackHole                 ║"
-echo "  ║  6. Right-click → 'Use This Device For Sound Output'          ║"
+echo "  ║  1. Open Audio MIDI Setup (Spotlight -> 'Audio MIDI Setup')   ║"
+echo "  ║  2. Click '+' -> 'Create Multi-Output Device'                 ║"
+echo "  ║  3. Check: BlackHole 2ch + your headphones/speakers           ║"
+echo "  ║  4. Ensure Built-in Output is on top (Clock Source)           ║"
+echo "  ║  5. Enable 'Drift Correction' on BlackHole 2ch                ║"
+echo "  ║  6. Right-click -> 'Use This Device For Sound Output'         ║"
 echo "  ║                                                               ║"
-echo "  ║  Configuración de API Keys:                                   ║"
-echo "  ║  Crea un archivo ~/.eco.env con tus credenciales              ║"
-echo "  ║  (ej: DEEPGRAM_API_KEY, MIMO_API_KEY, etc.)                   ║"
+echo "  ║  API Key Configuration:                                       ║"
+echo "  ║  Create a ~/.eco.env file with your credentials               ║"
+echo "  ║  (e.g., DEEPGRAM_API_KEY, MIMO_API_KEY, etc.)                 ║"
 echo "  ║                                                               ║"
-echo "  ║  Luego:                                                       ║"
-echo "  ║  Preferencias → Privacidad → Micrófono → habilitar Terminal   ║"
+echo "  ║  Then:                                                        ║"
+echo "  ║  System Settings -> Privacy & Security -> Microphone          ║"
+echo "  ║  -> enable Terminal                                           ║"
 echo "  ║                                                               ║"
-echo "  ║  Uso:                                                         ║"
-echo "  ║  Ejecuta 'eco --help' en cualquier terminal.                  ║"
+echo "  ║  Usage:                                                       ║"
+echo "  ║  Run 'eco --help' in any terminal.                            ║"
 echo "  ║                                                               ║"
 echo "  ╚═══════════════════════════════════════════════════════════════╝"
 echo ""

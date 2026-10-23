@@ -1,21 +1,19 @@
 """
-Chrome Capture - Captura de ventanas de Chrome vía su protocolo de depuración (CDP).
+Chrome Capture - Capture Chrome windows via Chrome DevTools Protocol (CDP).
 
-Por qué existe este módulo: cuando una ventana de Chrome reproduce video con
-aceleración por hardware y queda completamente oculta detrás de otra ventana,
-`screencapture -l<id>` (y también ScreenCaptureKit) dejan de poder leer ese
-contenido correctamente porque el video se compone fuera del backing store
-normal que esas APIs usan. Pedirle el screenshot directamente a Chrome vía CDP
-(`Page.captureScreenshot`) evita el problema por completo: Chrome renderiza su
-propia página sin pasar por el compositor de ventanas de macOS.
+Why this module exists: when a Chrome window plays video with hardware-accelerated
+decoding and becomes fully occluded behind another window, `screencapture -l<id>`
+(and ScreenCaptureKit) fail to read the video surface because it is composited
+outside the normal window backing store. Requesting screenshots directly from
+Chrome via CDP (`Page.captureScreenshot`) avoids this issue completely: Chrome
+renders its own page surface without touching the macOS window compositor.
 
-Esto requiere que Chrome corra con `--remote-debugging-port=<PORT>`. Chrome
-moderno se niega a exponer ese puerto sobre el perfil de usuario por defecto
-(medida de seguridad, para que nada pueda robar sesiones/cookies vía CDP), así
-que eco NO intenta activarlo ni reiniciar Chrome por sí solo: este módulo solo
-se usa quien ya tenga Chrome corriendo con ese flag por su cuenta (típicamente
-sobre un `--user-data-dir` separado). Cuando no está disponible, la captura de
-ventana cae de vuelta al método clásico de macOS de forma transparente.
+This requires Chrome to run with `--remote-debugging-port=<PORT>`. Modern Chrome
+refuses to expose this port against the default user profile (as a security
+measure against session/cookie theft), so Eco NEVER attempts to restart Chrome
+or force this flag on. This module is used opportunistically if Chrome is
+already running with that port open (e.g. on a separate `--user-data-dir`).
+Otherwise, window capture transparently falls back to native macOS screencapture.
 """
 
 import base64
@@ -27,11 +25,11 @@ import urllib.request
 from urllib.parse import urlparse
 
 CHROME_CDP_PORT = 9339
-_BOUNDS_TOLERANCE = 20  # píxeles de tolerancia al comparar bounds de ventana
+_BOUNDS_TOLERANCE = 20  # pixel tolerance when comparing window bounds
 
 
 def _http_get_json(url, timeout=2.0):
-    """GET de una URL local y parseo de JSON. None si falla."""
+    """GET a local URL and parse JSON. Returns None on failure."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -40,14 +38,15 @@ def _http_get_json(url, timeout=2.0):
 
 
 def is_debug_port_open(port=CHROME_CDP_PORT, timeout=1.0):
-    """True si hay un Chrome escuchando su protocolo de depuración en el puerto."""
+    """True if Chrome is listening on its DevTools debugging port."""
     version = _http_get_json(f"http://127.0.0.1:{port}/json/version", timeout=timeout)
     return bool(version and "webSocketDebuggerUrl" in version)
 
 
 class _CDPConnection:
-    """Cliente WebSocket mínimo y síncrono, suficiente para pedir-y-recibir una
-    respuesta del Chrome DevTools Protocol. No depende de librerías externas."""
+    """Minimal synchronous WebSocket client for Chrome DevTools Protocol.
+    Has no external third-party dependencies.
+    """
 
     def __init__(self, ws_url, timeout=5.0):
         parsed = urlparse(ws_url)
@@ -78,7 +77,7 @@ class _CDPConnection:
         while b"\r\n\r\n" not in self._buffer:
             chunk = self._sock.recv(4096)
             if not chunk:
-                raise ConnectionError("Chrome cerró la conexión durante el handshake de WebSocket")
+                raise ConnectionError("Chrome closed connection during WebSocket handshake")
             self._buffer += chunk
 
         header_end = self._buffer.index(b"\r\n\r\n")
@@ -86,13 +85,13 @@ class _CDPConnection:
         self._buffer = self._buffer[header_end + 4:]
 
         if b"101" not in status_line:
-            raise ConnectionError(f"Handshake de WebSocket falló: {status_line!r}")
+            raise ConnectionError(f"WebSocket handshake failed: {status_line!r}")
 
     def _recv_exact(self, n):
         while len(self._buffer) < n:
             chunk = self._sock.recv(4096)
             if not chunk:
-                raise ConnectionError("Conexión cerrada leyendo un frame de WebSocket")
+                raise ConnectionError("Connection closed while reading WebSocket frame")
             self._buffer += chunk
         data, self._buffer = self._buffer[:n], self._buffer[n:]
         return data
@@ -113,7 +112,7 @@ class _CDPConnection:
         self._sock.sendall(header + mask + masked)
 
     def _recv_frame(self):
-        """Lee un frame completo (reensamblando continuaciones) y devuelve su payload de texto."""
+        """Read a full frame (reassembling continuations) and return text payload."""
         payload = b""
         while True:
             first2 = self._recv_exact(2)
@@ -132,11 +131,11 @@ class _CDPConnection:
             if mask_key:
                 data = bytes(b ^ mask_key[i % 4] for i, b in enumerate(data))
 
-            if opcode == 0x9:  # ping -> pong y seguir esperando el frame real
+            if opcode == 0x9:  # ping -> respond pong and keep waiting
                 self._send_pong(data)
                 continue
             if opcode == 0x8:  # close
-                raise ConnectionError("Chrome cerró la conexión de WebSocket")
+                raise ConnectionError("Chrome closed WebSocket connection")
 
             payload += data
             if fin:
@@ -149,7 +148,7 @@ class _CDPConnection:
         self._sock.sendall(header + mask + masked)
 
     def call(self, method, params=None, msg_id=1):
-        """Envía un comando CDP y espera la respuesta con el mismo id (ignora eventos)."""
+        """Send a CDP command and await response matching msg_id (ignoring events)."""
         self._send_text_frame(json.dumps({"id": msg_id, "method": method, "params": params or {}}))
         while True:
             payload = self._recv_frame()
@@ -177,10 +176,9 @@ def _bounds_match(a, b, tolerance=_BOUNDS_TOLERANCE):
 
 
 def find_chrome_tab_for_window(window_bounds, port=CHROME_CDP_PORT):
-    """Encuentra la webSocketDebuggerUrl de la pestaña de Chrome cuya ventana
-    coincide (por posición/tamaño en pantalla) con window_bounds
-    ({"x","y","width","height"}, mismo formato que devuelve find_window).
-    Devuelve None si no hay match o si el puerto de depuración no responde.
+    """Find the webSocketDebuggerUrl of the Chrome tab whose on-screen bounds
+    match window_bounds ({"x","y","width","height"}).
+    Returns None if no match or if debugging port does not respond.
     """
     version = _http_get_json(f"http://127.0.0.1:{port}/json/version")
     tabs = _http_get_json(f"http://127.0.0.1:{port}/json")
@@ -222,9 +220,10 @@ def find_chrome_tab_for_window(window_bounds, port=CHROME_CDP_PORT):
 
 
 def capture_chrome_window_screenshot(window_bounds, filepath, port=CHROME_CDP_PORT):
-    """Captura la ventana de Chrome que coincide con window_bounds usando CDP.
-    Devuelve True/False. No lanza excepciones: cualquier fallo se traduce en False
-    para que el llamador pueda caer de vuelta al método clásico (screencapture)."""
+    """Capture Chrome window matching window_bounds via CDP.
+    Returns True/False. Does not raise: any error returns False so caller can fall
+    back to standard macOS screencapture.
+    """
     page_ws = find_chrome_tab_for_window(window_bounds, port=port)
     if not page_ws:
         return False
@@ -249,4 +248,3 @@ def capture_chrome_window_screenshot(window_bounds, filepath, port=CHROME_CDP_PO
         return False
     finally:
         conn.close()
-

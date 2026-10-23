@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Comprime un archivo histórico de grabaciones WAV a Opus mono.
+Compress historical WAV recordings to Opus mono.
 
-El WAV que produce Eco durante la captura es PCM sin comprimir: voz guardada a
-1536 kbps. Como archivo, Opus mono a 32 kbps la reduce unas 50x sin perder
-inteligibilidad ni precisión de transcripción.
+The WAV produced by Eco during capture is uncompressed PCM: voice saved at
+1536 kbps. As an archive format, Opus mono at 32 kbps reduces size by ~50x
+without noticeable loss in intelligibility or transcription accuracy.
 
-Por defecto solo simula (--dry-run implícito). Para escribir hay que pasar
---apply, y para borrar los WAV originales, --delete-originals. Un original nunca
-se borra sin antes verificar que el Opus existe, no está vacío y su duración
-coincide con la del WAV.
+By default, this tool performs a dry run. Use --apply to write files,
+and --delete-originals to remove the original WAVs. An original is never
+deleted without verifying that the Opus file exists, is non-empty, and its
+duration matches the WAV within tolerance.
 
-Uso:
-    python compress_archive.py ~/ruta/audio                 # simula
-    python compress_archive.py ~/ruta/audio --apply         # convierte
-    python compress_archive.py ~/ruta/audio --apply --delete-originals
+Usage:
+    python compress_archive.py ~/audio_folder                  # dry run
+    python compress_archive.py ~/audio_folder --apply          # convert
+    python compress_archive.py ~/audio_folder --apply --delete-originals
 """
 
 import argparse
@@ -26,11 +26,11 @@ from datetime import datetime
 from pathlib import Path
 
 DEFAULT_BITRATE = "32k"
-DURATION_TOLERANCE = 1.0  # segundos
+DURATION_TOLERANCE = 1.0  # seconds
 
 
 def probe_duration(path):
-    """Duración en segundos, o None si no se puede leer."""
+    """Return duration in seconds, or None if probe fails."""
     try:
         res = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -50,11 +50,11 @@ def human(nbytes):
 
 
 def convert(wav, bitrate):
-    """Convierte un WAV a Opus. Devuelve (ok, ruta_opus, mensaje)."""
+    """Convert a WAV file to Opus. Returns (ok, opus_path, message)."""
     opus = wav.with_suffix(".opus")
 
     if opus.exists():
-        return False, opus, "ya existe un .opus, se omite"
+        return False, opus, "opus already exists, skipping"
 
     try:
         subprocess.run(
@@ -67,7 +67,7 @@ def convert(wav, bitrate):
     except subprocess.CalledProcessError as e:
         if opus.exists():
             opus.unlink()
-        return False, opus, f"ffmpeg falló: {e.stderr.decode()[:120]}"
+        return False, opus, f"ffmpeg failed: {e.stderr.decode()[:120]}"
     except Exception as e:
         if opus.exists():
             opus.unlink()
@@ -76,61 +76,61 @@ def convert(wav, bitrate):
     if not opus.exists() or opus.stat().st_size == 0:
         if opus.exists():
             opus.unlink()
-        return False, opus, "resultado vacío"
+        return False, opus, "empty output file"
 
     return True, opus, ""
 
 
 def verify(wav, opus):
-    """Comprueba que el Opus representa fielmente al WAV antes de borrar nada."""
+    """Verify that Opus faithfully represents WAV before deleting the original."""
     d_wav = probe_duration(wav)
     d_opus = probe_duration(opus)
 
     if d_wav is None or d_opus is None:
-        return False, "no se pudo leer la duración"
+        return False, "could not read audio duration"
 
     delta = abs(d_wav - d_opus)
     if delta > DURATION_TOLERANCE:
-        return False, f"duración distinta ({d_wav:.1f}s vs {d_opus:.1f}s)"
+        return False, f"duration mismatch ({d_wav:.1f}s vs {d_opus:.1f}s)"
 
     return True, ""
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Comprime grabaciones WAV a Opus mono para archivado.",
+        description="Compress WAV recordings to Opus mono for archiving.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("directorio", help="Carpeta con los .wav (se recorre recursivamente)")
+    ap.add_argument("directory", help="Folder containing .wav files (searched recursively)")
     ap.add_argument("--apply", action="store_true",
-                    help="Escribe de verdad (sin este flag solo simula)")
+                    help="Execute conversions (dry run by default)")
     ap.add_argument("--delete-originals", action="store_true",
-                    help="Borra cada WAV tras verificar su Opus. Requiere --apply")
+                    help="Delete each WAV after verifying its Opus file. Requires --apply")
     ap.add_argument("--bitrate", default=DEFAULT_BITRATE,
-                    help=f"Bitrate del Opus (default: {DEFAULT_BITRATE})")
+                    help=f"Opus audio bitrate (default: {DEFAULT_BITRATE})")
     ap.add_argument("--manifest", metavar="FILE",
-                    help="Guarda un JSON con el resultado de cada archivo")
+                    help="Save JSON summary report of all conversions")
     args = ap.parse_args()
 
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        sys.exit("ffmpeg/ffprobe no encontrados. Instala con: brew install ffmpeg")
+        sys.exit("ffmpeg/ffprobe not found. Install with: brew install ffmpeg")
 
-    root = Path(args.directorio).expanduser()
+    root = Path(args.directory).expanduser()
     if not root.is_dir():
-        sys.exit(f"No es un directorio: {root}")
+        sys.exit(f"Not a directory: {root}")
 
     wavs = sorted(p for p in root.rglob("*.wav") if p.is_file())
     if not wavs:
-        sys.exit(f"No se encontraron .wav en {root}")
+        sys.exit(f"No .wav files found in {root}")
 
     total_before = sum(p.stat().st_size for p in wavs)
-    print(f"\n  {len(wavs)} archivos WAV, {human(total_before)} en total")
-    print(f"  Destino: Opus mono {args.bitrate}")
+    print(f"\n  {len(wavs)} WAV files, {human(total_before)} total")
+    print(f"  Target: Opus mono {args.bitrate}")
     if not args.apply:
-        print("  MODO SIMULACIÓN — no se escribe nada (usa --apply para ejecutar)")
+        print("  SIMULATION MODE - nothing will be modified (use --apply to execute)")
     elif args.delete_originals:
-        print("  Los WAV se borrarán tras verificar cada Opus")
+        print("  WAV files will be deleted after verifying each Opus file")
     print()
 
     results = []
@@ -142,26 +142,26 @@ def main():
         label = f"[{i}/{len(wavs)}] {wav.name[:52]}"
 
         if not args.apply:
-            est = size_before / 54  # ratio medido para voz a 32k mono
-            print(f"  {label}\n      {human(size_before)} -> ~{human(est)} (estimado)")
+            est = size_before / 54  # measured ratio for 32k mono voice
+            print(f"  {label}\n      {human(size_before)} -> ~{human(est)} (estimated)")
             total_after += est
             continue
 
         ok, opus, msg = convert(wav, args.bitrate)
         if not ok:
-            print(f"  {label}\n      OMITIDO: {msg}")
+            print(f"  {label}\n      SKIPPED: {msg}")
             skipped += 1
             total_after += size_before
-            results.append({"wav": str(wav), "estado": "omitido", "motivo": msg})
+            results.append({"wav": str(wav), "status": "skipped", "reason": msg})
             continue
 
         good, why = verify(wav, opus)
         if not good:
-            print(f"  {label}\n      FALLO DE VERIFICACIÓN: {why} — se conserva el WAV")
+            print(f"  {label}\n      VERIFICATION FAILED: {why} - keeping WAV")
             opus.unlink()
             failed += 1
             total_after += size_before
-            results.append({"wav": str(wav), "estado": "fallo", "motivo": why})
+            results.append({"wav": str(wav), "status": "failed", "reason": why})
             continue
 
         size_after = opus.stat().st_size
@@ -176,38 +176,38 @@ def main():
             deleted += 1
 
         print(f"  {label}\n      {human(size_before)} -> {human(size_after)} "
-              f"({ratio:.0f}x){'  [WAV borrado]' if removed else ''}")
+              f"({ratio:.0f}x){'  [WAV deleted]' if removed else ''}")
 
         results.append({
-            "wav": str(wav), "opus": str(opus), "estado": "ok",
-            "bytes_antes": size_before, "bytes_despues": size_after,
-            "ratio": round(ratio, 1), "wav_borrado": removed,
+            "wav": str(wav), "opus": str(opus), "status": "ok",
+            "bytes_before": size_before, "bytes_after": size_after,
+            "ratio": round(ratio, 1), "wav_deleted": removed,
         })
 
     print(f"\n  {'—' * 52}")
-    print(f"  Antes:   {human(total_before)}")
-    print(f"  Después: {human(total_after)}")
+    print(f"  Before:  {human(total_before)}")
+    print(f"  After:   {human(total_after)}")
     if total_after:
-        print(f"  Ahorro:  {human(total_before - total_after)} "
-              f"({total_before / total_after:.0f}x menos)")
+        print(f"  Savings: {human(total_before - total_after)} "
+              f"({total_before / total_after:.0f}x smaller)")
     if args.apply:
-        print(f"\n  Convertidos: {converted}   Omitidos: {skipped}   "
-              f"Fallidos: {failed}   WAV borrados: {deleted}")
+        print(f"\n  Converted: {converted}   Skipped: {skipped}   "
+              f"Failed: {failed}   WAV deleted: {deleted}")
         if failed or skipped:
-            print("  Los WAV de los archivos omitidos o fallidos siguen intactos.")
+            print("  Original WAVs of skipped or failed files were kept intact.")
     else:
-        print("\n  Nada se ha modificado. Añade --apply para ejecutar.")
+        print("\n  Nothing was modified. Add --apply to execute.")
 
     if args.manifest and args.apply:
         Path(args.manifest).write_text(json.dumps({
-            "fecha": datetime.now().isoformat(),
-            "directorio": str(root),
+            "date": datetime.now().isoformat(),
+            "directory": str(root),
             "bitrate": args.bitrate,
-            "bytes_antes": total_before,
-            "bytes_despues": total_after,
-            "archivos": results,
+            "bytes_before": total_before,
+            "bytes_after": total_after,
+            "files": results,
         }, indent=2, ensure_ascii=False))
-        print(f"  Manifiesto: {args.manifest}")
+        print(f"  Manifest written to: {args.manifest}")
 
     print()
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Eco - Grabador de audio interno para macOS
-Usa BlackHole como driver de audio virtual para capturar audio del sistema.
+Eco - macOS Internal Audio Recorder
+Uses BlackHole as a virtual audio driver to capture system audio.
 """
 
 import argparse
@@ -33,18 +33,18 @@ DEFAULT_SAMPLE_RATE = 48000
 DEFAULT_CHANNELS = 2
 BLOCK_SIZE = 1024
 
-# Compresión de audio: el WAV PCM es necesario durante la captura, pero como
-# archivo es voz guardada a 1536 kbps. Opus mono a 32 kbps la reduce ~54x sin
-# perder inteligibilidad ni precisión de transcripción.
+# Audio compression: PCM WAV is needed during live capture, but as an archive format
+# it stores voice at 1536 kbps. Opus mono at 32 kbps reduces file size ~54x without
+# perceptible loss in intelligibility or transcription accuracy.
 DEFAULT_AUDIO_BITRATE = "32k"
 
 
 def compress_audio(wav_path, bitrate=DEFAULT_AUDIO_BITRATE, keep_original=False,
                    printer=None):
-    """Convierte un WAV a Opus mono y borra el original si la conversión es válida.
+    """Convert a WAV file to Opus mono and delete original if conversion succeeds.
 
-    Devuelve la ruta del .opus, o la del WAV si no se pudo convertir. Nunca borra
-    el original sin antes verificar que el resultado existe y tiene contenido.
+    Returns the path to the .opus file, or original WAV if conversion fails. Never
+    deletes original without verifying that the output exists and has content.
     """
     import shutil
     import subprocess
@@ -56,7 +56,7 @@ def compress_audio(wav_path, bitrate=DEFAULT_AUDIO_BITRATE, keep_original=False,
         return str(wav_path)
 
     if shutil.which("ffmpeg") is None:
-        say("  [WARN] ffmpeg no encontrado, se conserva el WAV sin comprimir")
+        say("  [WARN] ffmpeg not found, keeping uncompressed WAV")
         return str(wav_path)
 
     opus_path = wav_path.with_suffix(".opus")
@@ -71,20 +71,20 @@ def compress_audio(wav_path, bitrate=DEFAULT_AUDIO_BITRATE, keep_original=False,
             check=True, capture_output=True, timeout=1800,
         )
     except Exception as e:
-        say(f"  [WARN] No se pudo comprimir el audio, se conserva el WAV: {e}")
+        say(f"  [WARN] Failed to compress audio, keeping WAV: {e}")
         if opus_path.exists():
             opus_path.unlink()
         return str(wav_path)
 
     if not opus_path.exists() or opus_path.stat().st_size == 0:
-        say("  [WARN] La compresión produjo un archivo vacío, se conserva el WAV")
+        say("  [WARN] Compression produced an empty file, keeping WAV")
         if opus_path.exists():
             opus_path.unlink()
         return str(wav_path)
 
     new_size = opus_path.stat().st_size
     ratio = original_size / new_size if new_size else 0
-    say(f"  Comprimido a Opus {bitrate} mono: "
+    say(f"  Compressed to Opus {bitrate} mono: "
         f"{original_size / 1048576:.1f} MB -> {new_size / 1048576:.1f} MB ({ratio:.0f}x)")
 
     if not keep_original:
@@ -94,32 +94,32 @@ def compress_audio(wav_path, bitrate=DEFAULT_AUDIO_BITRATE, keep_original=False,
 
 
 def list_devices():
-    """Muestra dispositivos de audio disponibles."""
+    """Display available audio input and output devices."""
     devices = sd.query_devices()
-    print("\n  Dispositivos de Audio Disponibles")
+    print("\n  Available Audio Devices")
     print("  " + "=" * 50)
 
-    print("\n  OUTPUT (salida):")
+    print("\n  OUTPUT:")
     print("  " + "-" * 50)
     for i, dev in enumerate(devices):
         if dev["max_output_channels"] > 0:
             default = " ← default" if i == sd.default.device[1] else ""
             print(f"    [{i}] {dev['name']}{default}")
-            print(f"        Canales: {dev['max_output_channels']} | Sample rate: {int(dev['default_samplerate'])} Hz")
+            print(f"        Channels: {dev['max_output_channels']} | Sample rate: {int(dev['default_samplerate'])} Hz")
 
-    print("\n  INPUT (entrada):")
+    print("\n  INPUT:")
     print("  " + "-" * 50)
     for i, dev in enumerate(devices):
         if dev["max_input_channels"] > 0:
             default = " ← default" if i == sd.default.device[0] else ""
             print(f"    [{i}] {dev['name']}{default}")
-            print(f"        Canales: {dev['max_input_channels']} | Sample rate: {int(dev['default_samplerate'])} Hz")
+            print(f"        Channels: {dev['max_input_channels']} | Sample rate: {int(dev['default_samplerate'])} Hz")
 
     print()
 
 
 def find_device(name_pattern, kind="input"):
-    """Busca un dispositivo por nombre (case-insensitive)."""
+    """Find device by name pattern (case-insensitive)."""
     devices = sd.query_devices()
     name_lower = name_pattern.lower()
 
@@ -135,7 +135,7 @@ def find_device(name_pattern, kind="input"):
 
 
 def get_device_channels(device_idx, kind="input"):
-    """Retorna el número de canales del dispositivo."""
+    """Return number of channels for device."""
     devices = sd.query_devices()
     dev = devices[device_idx]
     if kind == "input":
@@ -144,7 +144,7 @@ def get_device_channels(device_idx, kind="input"):
 
 
 def find_system_device():
-    """Encuentra el dispositivo para grabar audio del sistema (BlackHole)."""
+    """Find device to record system audio (BlackHole)."""
     idx, name = find_device("blackhole", "input")
     if idx is not None:
         return idx, name
@@ -157,8 +157,8 @@ def find_system_device():
 
 
 def find_mic_device():
-    """Encuentra el micrófono nativo."""
-    for pattern in ["built-in", "macbook", "internal", "micrófono incorporado", "microfono incorporado"]:
+    """Find native microphone device."""
+    for pattern in ["built-in", "macbook", "internal", "built-in microphone", "micrófono incorporado", "microfono incorporado"]:
         idx, name = find_device(pattern, "input")
         if idx is not None:
             return idx, name
@@ -172,7 +172,7 @@ def find_mic_device():
 
 
 def find_both_device():
-    """Encuentra Aggregate Device o BlackHole para grabar ambos."""
+    """Find Aggregate Device or BlackHole to record both."""
     for pattern in ["aggregate", "eco"]:
         idx, name = find_device(pattern, "input")
         if idx is not None:
@@ -182,7 +182,7 @@ def find_both_device():
 
 
 def get_visible_windows():
-    """Retorna una lista de ventanas visibles (dicts con id, owner, title, etc)."""
+    """Return list of visible windows (dicts with id, owner, title, bounds, etc.)."""
     swift_code = """
     import Cocoa
     import CoreGraphics
@@ -262,34 +262,34 @@ def get_visible_windows():
     try:
         res = subprocess.run(["swift", "-"], input=swift_code, text=True, capture_output=True, check=True)
         return json.loads(res.stdout.strip())
-    except Exception as e:
+    except Exception:
         return []
 
 
 def list_visible_windows():
-    """Muestra una lista de ventanas visibles en el sistema y sus IDs."""
+    """Display a list of visible windows and their IDs."""
     try:
         windows = get_visible_windows()
         if not windows:
-            print("\n  No se encontraron ventanas visibles.")
+            print("\n  No visible windows found.")
             return
         
-        print("\n  Ventanas Visibles Disponibles")
+        print("\n  Available Visible Windows")
         print("  " + "=" * 85)
-        print(f"  {'ID':<10} | {'Aplicación/Owner':<25} | {'Título de Ventana'}")
+        print(f"  {'ID':<10} | {'Application/Owner':<25} | {'Window Title'}")
         print("  " + "-" * 85)
         for w in windows:
-            owner = w.get("owner", "Desconocido")
+            owner = w.get("owner", "Unknown")
             title = w.get("title", "")
             owner_trunc = owner[:25]
             print(f"  {w['id']:<10} | {owner_trunc:<25} | {title}")
         print()
     except Exception as e:
-        print(f"  [ERROR] No se pudieron listar las ventanas: {e}")
+        print(f"  [ERROR] Failed to list windows: {e}")
 
 
 def find_window(query):
-    """Busca una ventana por ID, owner o título. Retorna dict con id, owner, title o None."""
+    """Find window by ID, owner, or title. Returns dict with id, owner, title or None."""
     swift_code = """
     import Cocoa
     import CoreGraphics
@@ -400,7 +400,7 @@ def find_window(query):
 
 
 class Eco:
-    """Grabador de audio principal."""
+    """Main audio recorder."""
 
     def __init__(self, mode, channels_mode="mix", device_idx=None,
                  sample_rate=DEFAULT_SAMPLE_RATE, duration=None, output_file=None,
@@ -444,21 +444,20 @@ class Eco:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.output_file = str(Path(self.output_dir) / f"eco_{timestamp}.wav")
 
-        # "both" + "mix" siempre necesita dos dispositivos por separado (sistema
-        # y micrófono): un solo --device no alcanza para elegir ambos, así que
-        # se detectan automáticamente sin importar si se pasó device_idx.
+        # "both" + "mix" requires two separate devices (system audio and mic),
+        # so they are detected automatically regardless of explicit device_idx.
         needs_both_mix_detection = self.mode == "both" and self.channels_mode == "mix"
 
         if device_idx is not None and not needs_both_mix_detection:
             self.device_idx = device_idx
         else:
             if device_idx is not None and needs_both_mix_detection:
-                print("  [WARN] --device no aplica con --both --channels mix "
-                      "(se detectan automáticamente el audio del sistema y el micrófono)")
+                print("  [WARN] --device does not apply with --both --channels mix "
+                      "(system audio and microphone are detected automatically)")
             self._auto_detect_device()
 
     def reset_output_file(self):
-        """Genera un nuevo nombre de archivo de salida."""
+        """Generate a new output filename for a new session."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if self.output_file_param:
             p = Path(self.output_file_param)
@@ -476,9 +475,9 @@ class Eco:
         self.screenshots_dir = None
 
     def _capture_window(self, window_id, owner, bounds, filepath):
-        """Intenta capturar una ventana específica. Si es de Chrome y tiene
-        depuración remota activa, usa CDP (robusto ante video oculto);
-        si no, cae al método clásico screencapture -l<id>."""
+        """Attempt to capture a specific window. Uses CDP for Chrome if remote
+        debugging is available; falls back to native screencapture -l<id> otherwise.
+        """
         import subprocess
         import chrome_capture
 
@@ -496,7 +495,7 @@ class Eco:
             return False
 
     def _take_screenshots_loop(self):
-        """Loop de captura de pantalla periódica en segundo plano."""
+        """Background periodic screenshot loop."""
         import subprocess
         import os
         import time
@@ -504,47 +503,47 @@ class Eco:
         import shutil
         from pathlib import Path
 
-        # Generar ruta del directorio de screenshots al lado del archivo WAV
+        # Generate screenshots directory alongside the WAV file
         wav_path = Path(self.output_file)
         self.screenshots_dir = wav_path.parent / f"{wav_path.stem}_screenshots"
         self.screenshots_dir.mkdir(parents=True, exist_ok=True)
         
-        msg = f"  [*] Carpeta de capturas: {self.screenshots_dir}"
+        msg = f"  [*] Screenshots directory: {self.screenshots_dir}"
         if hasattr(self, '_sidekick') and self._sidekick:
             self._sidekick.safe_print(msg)
         else:
             print(msg)
 
-        # Esperar un segundo para que los cambios de terminal/foco se completen y estabilicen
+        # Allow terminal focus transitions to stabilize
         time.sleep(1.0)
 
         current_window_id = None
         current_window_owner = None
         current_window_bounds = None
-        last_logged_state = None  # Puede ser 'window', 'window_obscured', 'window_unavailable', 'fullscreen'
+        last_logged_state = None  # 'window', 'window_obscured', 'window_unavailable', 'fullscreen'
 
         def _bounds_of(w_info):
             return {"x": w_info["x"], "y": w_info["y"], "width": w_info["width"], "height": w_info["height"]}
 
-        # Inicializar la última captura exitosa desde el disco si existe
+        # Initialize last successful screenshot from disk if present
         existing_shots = sorted(glob.glob(str(self.screenshots_dir / "*.jpg")))
         last_successful_filepath = existing_shots[-1] if existing_shots else None
 
-        # Inicialización de la ventana
+        # Window target initialization
         if self.window_query:
             w_info = find_window(self.window_query)
             if w_info:
                 current_window_id = w_info["id"]
                 current_window_owner = w_info["owner"]
                 current_window_bounds = _bounds_of(w_info)
-                msg_init = f"  [*] Capturando ventana: ID {current_window_id} ({w_info['owner']} - {w_info['title']})"
+                msg_init = f"  [*] Capturing window: ID {current_window_id} ({w_info['owner']} - {w_info['title']})"
                 if hasattr(self, '_sidekick') and self._sidekick:
                     self._sidekick.safe_print(msg_init)
                 else:
                     print(msg_init)
                 last_logged_state = 'window'
             else:
-                msg_init = f"  [WARN] Ventana '{self.window_query}' no encontrada en este momento. Se esperará a que aparezca."
+                msg_init = f"  [WARN] Window '{self.window_query}' not found at this time. Waiting for it to appear."
                 if hasattr(self, '_sidekick') and self._sidekick:
                     self._sidekick.safe_print(msg_init)
                 else:
@@ -567,7 +566,7 @@ class Eco:
                 if self.window_query:
                     captured = False
 
-                    # Si no tenemos ID, intentamos resolverlo
+                    # Try resolving window ID if not known
                     if current_window_id is None:
                         w_info = find_window(self.window_query)
                         if w_info:
@@ -580,13 +579,12 @@ class Eco:
                             current_window_id, current_window_owner, current_window_bounds, filepath
                         )
                         if not captured:
-                            # Re-resolver ID por si cambió o hubo un glitch de transición
+                            # Re-resolve window ID in case of transition or title change
                             w_info = find_window(self.window_query)
                             if w_info:
                                 current_window_id = w_info["id"]
                                 current_window_owner = w_info["owner"]
                                 current_window_bounds = _bounds_of(w_info)
-                                # Esperar medio segundo antes del reintento
                                 time.sleep(0.5)
                                 captured = self._capture_window(
                                     current_window_id, current_window_owner, current_window_bounds, filepath
@@ -595,44 +593,44 @@ class Eco:
                     if captured:
                         last_successful_filepath = filepath
                         if last_logged_state != 'window':
-                            msg_state = f"  [*] Ventana activa. Capturando ID {current_window_id}."
+                            msg_state = f"  [*] Window active. Capturing ID {current_window_id}."
                             if hasattr(self, '_sidekick') and self._sidekick:
                                 self._sidekick.safe_print(msg_state)
                             else:
                                 print(msg_state)
                             last_logged_state = 'window'
                     else:
-                        # En vez de fallback a pantalla completa, reutilizamos la última captura exitosa
+                        # Reuse last successful capture instead of falling back to full desktop
                         if last_successful_filepath and os.path.exists(last_successful_filepath):
                             try:
                                 shutil.copy2(last_successful_filepath, filepath)
                                 if last_logged_state != 'window_obscured':
-                                    msg_state = f"  [*] Ventana '{self.window_query}' oculta o minimizada. Reutilizando última captura."
+                                    msg_state = f"  [*] Window '{self.window_query}' hidden or minimized. Reusing last capture."
                                     if hasattr(self, '_sidekick') and self._sidekick:
                                         self._sidekick.safe_print(msg_state)
                                     else:
                                         print(msg_state)
                                     last_logged_state = 'window_obscured'
                             except Exception as e:
-                                msg_err = f"  [ERROR] Falló duplicación de captura: {e}"
+                                msg_err = f"  [ERROR] Failed to duplicate capture: {e}"
                                 if hasattr(self, '_sidekick') and self._sidekick:
                                     self._sidekick.safe_print(msg_err)
                                 else:
                                     print(msg_err)
                         else:
                             if last_logged_state != 'window_unavailable':
-                                msg_state = f"  [WARN] Ventana '{self.window_query}' no disponible y sin captura previa."
+                                msg_state = f"  [WARN] Window '{self.window_query}' unavailable and no previous capture exists."
                                 if hasattr(self, '_sidekick') and self._sidekick:
                                     self._sidekick.safe_print(msg_state)
                                 else:
                                     print(msg_state)
                                 last_logged_state = 'window_unavailable'
                 else:
-                    # Captura de pantalla completa normal
+                    # Standard full-screen capture
                     try:
                         subprocess.run(["screencapture", "-x", "-t", "jpg", filepath], check=True)
                     except Exception as e:
-                        msg_err = f"  [WARN] Falló captura de pantalla: {e}"
+                        msg_err = f"  [WARN] Screenshot capture failed: {e}"
                         if hasattr(self, '_sidekick') and self._sidekick:
                             self._sidekick.safe_print(msg_err)
                         else:
@@ -643,55 +641,55 @@ class Eco:
             time.sleep(0.1)
 
     def _auto_detect_device(self):
-        """Detecta automáticamente el dispositivo según el modo."""
+        """Automatically detect input device based on chosen mode."""
         if self.mode == "output":
             idx, name = find_system_device()
             if idx is None:
-                print("  [ERROR] BlackHole no encontrado. Ejecuta: ./setup.sh")
+                print("  [ERROR] BlackHole not found. Run: ./setup.sh")
                 sys.exit(1)
             self.device_idx = idx
-            print(f"  Dispositivo sistema: {name}")
+            print(f"  System device: {name}")
 
         elif self.mode == "input":
             idx, name = find_mic_device()
             if idx is None:
-                print("  [ERROR] Micrófono no encontrado.")
+                print("  [ERROR] Microphone not found.")
                 sys.exit(1)
             self.device_idx = idx
-            print(f"  Micrófono: {name}")
+            print(f"  Microphone: {name}")
 
         elif self.mode == "both":
             if self.channels_mode == "split":
                 idx, name = find_both_device()
                 if idx is None:
-                    print("  [ERROR] No se encontró Aggregate Device.")
-                    print("  Crea uno en Audio MIDI Setup que combine BlackHole + tu micrófono.")
+                    print("  [ERROR] Aggregate Device not found.")
+                    print("  Create one in Audio MIDI Setup that combines BlackHole + your microphone.")
                     sys.exit(1)
                 self.device_idx = idx
-                print(f"  Dispositivo: {name}")
+                print(f"  Device: {name}")
             else:
                 sys_idx, sys_name = find_system_device()
                 mic_idx, mic_name = find_mic_device()
                 if sys_idx is None:
-                    print("  [ERROR] BlackHole no encontrado. Ejecuta: ./setup.sh")
+                    print("  [ERROR] BlackHole not found. Run: ./setup.sh")
                     sys.exit(1)
                 if mic_idx is None:
-                    print("  [ERROR] Micrófono no encontrado.")
+                    print("  [ERROR] Microphone not found.")
                     sys.exit(1)
                 self.system_device_idx = sys_idx
                 self.mic_device_idx = mic_idx
                 self.device_idx = sys_idx
-                print(f"  Sistema: {sys_name}")
-                print(f"  Micrófono: {mic_name}")
+                print(f"  System: {sys_name}")
+                print(f"  Microphone: {mic_name}")
 
     def _get_channels(self):
-        """Retorna el número de canales según el modo."""
+        """Return number of channels based on mode."""
         if self.mode == "both" and self.channels_mode == "split":
             return 2
         return DEFAULT_CHANNELS
 
     def start_recording(self):
-        """Inicia la grabación."""
+        """Start audio recording session."""
         self.recording = True
         self.start_time = time.time()
         
@@ -702,15 +700,15 @@ class Eco:
         channels = self._get_channels()
 
         msg = [
-            f"\n  Grabando → {self.output_file}",
-            f"  Sample rate: {self.sample_rate} Hz | Canales: {channels}"
+            f"\n  Recording -> {self.output_file}",
+            f"  Sample rate: {self.sample_rate} Hz | Channels: {channels}"
         ]
         if self.duration:
-            msg.append(f"  Duración: {self.duration}s")
+            msg.append(f"  Duration: {self.duration}s")
         if hasattr(self, '_sidekick') and self._sidekick:
-            msg.append("  Usa /stop o /quit para detener\n")
+            msg.append("  Use /stop or /quit to stop\n")
         else:
-            msg.append("  Presiona Ctrl+C para detener\n")
+            msg.append("  Press Ctrl+C to stop\n")
 
         msg_str = "\n".join(msg)
         if hasattr(self, '_sidekick') and self._sidekick:
@@ -729,7 +727,7 @@ class Eco:
             self.stop_recording()
 
     def _start_stream_recording(self, channels):
-        """Grabación con un solo stream."""
+        """Single-stream audio recording."""
         device_channels = get_device_channels(self.device_idx, "input")
         file_channels = channels
 
@@ -763,7 +761,6 @@ class Eco:
                     self._sidekick.send_external_audio(data)
 
                 # Only print timer when NOT in sidekick mode
-                # (sidekick mode uses a separate timer thread)
                 if not (hasattr(self, '_sidekick') and self._sidekick):
                     elapsed = time.time() - self.start_time - self.total_paused_time
                     if self.paused and self.pause_start_time:
@@ -790,7 +787,7 @@ class Eco:
                     time.sleep(0.1)
 
     def _start_mixed_recording(self):
-        """Grabación mezclada de sistema + micrófono."""
+        """Blended recording combining system audio and microphone."""
         with sf.SoundFile(
             self.output_file,
             mode="w",
@@ -799,8 +796,6 @@ class Eco:
             format="WAV",
             subtype="PCM_16"
         ) as self.file:
-            system_chunk = []
-            mic_chunk = []
             chunk_lock = {"system": None, "mic": None}
 
             def system_callback(indata, frames, time_info, status):
@@ -872,7 +867,7 @@ class Eco:
                     sd.sleep(10)
 
     def stop_recording(self):
-        """Detiene la grabación y muestra resumen."""
+        """Stop recording and display summary."""
         if self._stopped:
             return
         self._stopped = True
@@ -885,7 +880,7 @@ class Eco:
         else:
             elapsed = 0
 
-        # Move file to self.output_dir if changed
+        # Move files to output_dir if it was changed dynamically
         current_path = Path(self.output_file)
         desired_dir = Path(self.output_dir)
         current_txt_path = current_path.with_suffix(".txt")
@@ -901,13 +896,13 @@ class Eco:
                 if current_txt_path.exists():
                     shutil.move(str(current_txt_path), str(new_txt_path))
             except Exception as e:
-                msg = f"  [ERROR] No se pudo mover los archivos al nuevo directorio: {e}"
+                msg = f"  [ERROR] Failed to move files to new directory: {e}"
                 if hasattr(self, '_sidekick') and self._sidekick:
                     self._sidekick.safe_print(msg)
                 else:
                     print(msg)
 
-        # Comprimir antes del resumen para que el tamaño informado sea el final
+        # Compress before summary so reported size is final
         if self.compress:
             def _say(msg):
                 if hasattr(self, '_sidekick') and self._sidekick:
@@ -950,72 +945,72 @@ class Eco:
 def main():
     parser = argparse.ArgumentParser(
         prog="eco",
-        description="Eco - Grabador de audio interno para macOS",
+        description="Eco - macOS Internal Audio Recorder",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Ejemplos:
-  %(prog)s --output                        Grabar audio del sistema
-  %(prog)s --input                         Grabar micrófono
-  %(prog)s --both --channels split         Grabar ambos, canales separados
-  %(prog)s --both --channels mix           Grabar ambos, mezclado
-  %(prog)s --output --duration 60          Grabar 60 segundos
-  %(prog)s --output --output-file reunion  Guardar como reunion.wav
-  %(prog)s --list-devices                  Ver dispositivos de audio
-  %(prog)s --output --llm mimo             Grabar + transcribir + LLM
-  %(prog)s --output --no-compress          Conservar el WAV sin comprimir
-  %(prog)s --output --audio-bitrate 24k    Comprimir más agresivamente
+Examples:
+  %(prog)s --output                        Record system audio
+  %(prog)s --input                         Record microphone
+  %(prog)s --both --channels split         Record both, separate channels
+  %(prog)s --both --channels mix           Record both, mixed
+  %(prog)s --output --duration 60          Record for 60 seconds
+  %(prog)s --output --output-file meeting  Save as meeting.wav
+  %(prog)s --list-devices                  View audio devices
+  %(prog)s --output --llm mimo             Record + transcribe + LLM assistant
+  %(prog)s --output --no-compress          Keep uncompressed WAV
+  %(prog)s --output --audio-bitrate 24k    Compress more aggressively
         """
     )
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
 
-    mode_group = parser.add_argument_group("modos de grabación")
+    mode_group = parser.add_argument_group("recording modes")
     mode_group.add_argument("--output", action="store_true",
-                           help="Graba solo audio del sistema (BlackHole)")
+                           help="Record system audio only (BlackHole)")
     mode_group.add_argument("--input", action="store_true",
-                           help="Graba solo micrófono")
+                           help="Record microphone only")
     mode_group.add_argument("--both", action="store_true",
-                           help="Graba ambos (sistema + micrófono)")
+                           help="Record both (system audio + microphone)")
 
-    options = parser.add_argument_group("opciones")
+    options = parser.add_argument_group("options")
     options.add_argument("--duration", "-d", type=int, metavar="N",
-                        help="Duración en segundos (default: hasta Ctrl+C)")
+                        help="Duration in seconds (default: record until Ctrl+C)")
     options.add_argument("--output-file", "-o", metavar="FILE",
-                        help="Nombre del archivo WAV (default: eco_YYYYMMDD_HHMMSS.wav)")
+                        help="Output WAV filename (default: eco_YYYYMMDD_HHMMSS.wav)")
     options.add_argument("--device", "-D", metavar="NAME",
-                        help="Dispositivo de audio específico (ver --list-devices)")
+                        help="Target specific audio device (see --list-devices)")
     options.add_argument("--channels", "-c", choices=["split", "mix"], default="mix",
-                        help="Canales con --both: 'split' (L/R) o 'mix' (mezclado)")
+                        help="Channels for --both: 'split' (L/R) or 'mix' (blended)")
     options.add_argument("--sample-rate", "-r", type=int, default=DEFAULT_SAMPLE_RATE,
-                        help=f"Frecuencia de muestreo (default: {DEFAULT_SAMPLE_RATE})")
+                        help=f"Sampling rate (default: {DEFAULT_SAMPLE_RATE})")
     options.add_argument("--list-devices", "-l", action="store_true",
-                        help="Muestra dispositivos de audio disponibles")
+                        help="Show available audio devices")
     options.add_argument("--llm", choices=["anthropic", "openai", "mimo", "minimax"],
-                         help="Activa sidekick (transcripción + LLM)")
+                         help="Activate Sidekick (real-time transcription + LLM)")
     options.add_argument("--silence-timeout", type=float, default=120.0,
-                         help="Tiempo de silencio (segundos) antes de auto-cerrar (0 para desactivar, por defecto 120)")
+                         help="Silence timeout (seconds) before auto-quit (0 to disable, default: 120)")
     options.add_argument("--start", action="store_true",
-                         help="Inicia la grabación/transcripción inmediatamente (default: False, espera a /start)")
+                         help="Start recording/transcription immediately (default: False, waits for /start)")
     options.add_argument("--screenshots", action="store_true",
-                         help="Toma capturas de pantalla periódicas de la reunión")
+                         help="Take periodic screenshots during the meeting")
     options.add_argument("--screenshot-interval", type=int, default=10,
-                         help="Intervalo en segundos entre capturas de pantalla (default: 10)")
+                         help="Interval in seconds between screenshots (default: 10)")
     options.add_argument("--window", metavar="NAME_OR_ID",
-                         help="Filtra las capturas de pantalla por nombre de aplicación, título de ventana o ID. Usa 'list' para ver las ventanas disponibles.")
+                         help="Filter screenshots by application name, window title, or ID. Use 'list' to view available windows.")
 
-    audio_opts = parser.add_argument_group("archivo de audio")
+    audio_opts = parser.add_argument_group("audio file")
     audio_opts.add_argument("--no-compress", action="store_true",
-                            help="Conserva el WAV sin comprimir (por defecto se convierte a Opus)")
+                            help="Keep uncompressed WAV (converted to Opus by default)")
     audio_opts.add_argument("--keep-wav", action="store_true",
-                            help="Guarda el WAV original además del Opus comprimido")
+                            help="Keep original WAV in addition to compressed Opus")
     audio_opts.add_argument("--audio-bitrate", default=DEFAULT_AUDIO_BITRATE, metavar="RATE",
-                            help=f"Bitrate del Opus resultante (default: {DEFAULT_AUDIO_BITRATE})")
+                            help=f"Bitrate of resulting Opus file (default: {DEFAULT_AUDIO_BITRATE})")
 
     args = parser.parse_args()
 
     print(f"\n  ╔═══════════════════════════════════════╗")
     print(f"  ║       Eco v{VERSION}                      ║")
-    print(f"  ║       Grabador de Audio Interno        ║")
+    print(f"  ║       macOS Internal Audio Recorder   ║")
     print(f"  ╚═══════════════════════════════════════╝\n")
 
     if args.list_devices:
@@ -1033,18 +1028,18 @@ Ejemplos:
         if w_info and w_info.get("owner") == "Google Chrome":
             import chrome_capture
             if not chrome_capture.is_debug_port_open():
-                print("  [i] Estás capturando una ventana de Chrome. Si reproduce video y la tapas "
-                      "por completo con otra ventana, esa captura puede congelarse o verse negra "
-                      "hasta que vuelva a estar visible (limitación de cómo Chrome compone video "
-                      "acelerado por hardware). El audio y la transcripción no se ven afectados.")
+                print("  [i] You are capturing a Chrome window. If it is playing video and you "
+                      "completely cover it with another window, the capture may freeze or turn black "
+                      "until visible again (limitation of Chrome hardware video compositing). "
+                      "Audio and transcription are unaffected.")
 
     if not args.output and not args.input and not args.both:
         parser.print_help()
-        print("\n  [ERROR] Selecciona un modo: --output, --input, o --both")
+        print("\n  [ERROR] Select a mode: --output, --input, or --both")
         sys.exit(1)
 
     if args.channels == "split" and not args.both:
-        print("  [WARN] --channels solo tiene efecto con --both, ignorando")
+        print("  [WARN] --channels only takes effect with --both, ignoring")
 
     if args.output:
         mode = "output"
@@ -1057,9 +1052,9 @@ Ejemplos:
     if args.device:
         device_idx, device_name = find_device(args.device, "input")
         if device_idx is None:
-            print(f"  [ERROR] Dispositivo '{args.device}' no encontrado")
+            print(f"  [ERROR] Device '{args.device}' not found")
             sys.exit(1)
-        print(f"  Dispositivo: {device_name}")
+        print(f"  Device: {device_name}")
 
     grabador = Eco(
         mode=mode,
@@ -1085,7 +1080,7 @@ Ejemplos:
         if args.start:
             grabador.start_recording()
         else:
-            print("  [!] Grabación no iniciada. En modo standalone, debes usar el flag --start para iniciar la grabación inmediatamente.")
+            print("  [!] Recording not started. In standalone mode, pass the --start flag to begin recording immediately.")
             sys.exit(0)
 
 
@@ -1106,7 +1101,7 @@ def _start_with_sidekick(grabador, llm_provider, silence_timeout=120.0, auto_sta
         auto_start=auto_start
     )
 
-    # Link sidekick to grabador for /stop-listening command
+    # Link sidekick to grabador for /stop command
     sidekick._grabador = grabador
 
     # Link grabador to sidekick for audio forwarding

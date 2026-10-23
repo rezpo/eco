@@ -1,6 +1,6 @@
 """
-Eco Sidekick - Asistente IA para reuniones
-Captura audio en tiempo real, transcribe con Deepgram, y responde preguntas con LLM.
+Eco Sidekick - AI Meeting Assistant
+Captures real-time audio, transcribes with Deepgram, and answers questions with LLMs.
 """
 
 import asyncio
@@ -114,7 +114,7 @@ class DeepgramTranscriber:
     def start(self, sample_rate: int = DEFAULT_SAMPLE_RATE):
         """Start Deepgram transcription."""
         if not self.api_key:
-            raise ValueError("DEEPGRAM_API_KEY no configurada")
+            raise ValueError("DEEPGRAM_API_KEY is not configured")
 
         self._client = DeepgramClient(api_key=self.api_key)
         self._sample_rate = sample_rate
@@ -123,7 +123,7 @@ class DeepgramTranscriber:
         # Start background thread that processes audio buffer periodically
         self._process_thread = threading.Thread(target=self._process_loop, daemon=True)
         self._process_thread.start()
-        print("  [Deepgram] Transcripción iniciada")
+        print("  [Deepgram] Transcription started")
 
     def send_audio(self, audio_data: np.ndarray):
         """Add audio data to buffer for processing."""
@@ -245,7 +245,7 @@ class DeepgramTranscriber:
                 )
                 transcript = response.results.channels[0].alternatives[0].transcript
                 if transcript.strip():
-                    self.context.add("Participante", transcript.strip())
+                    self.context.add("Participant", transcript.strip())
                     if self.on_transcript:
                         self.on_transcript(transcript.strip())
                     else:
@@ -295,7 +295,7 @@ class DeepgramTranscriber:
             )
             transcript = response.results.channels[0].alternatives[0].transcript
             if transcript.strip():
-                self.context.add("Participante", transcript.strip())
+                self.context.add("Participant", transcript.strip())
                 if self.on_transcript:
                     self.on_transcript(transcript.strip())
                 else:
@@ -340,10 +340,10 @@ class Sidekick:
         try:
             self.llm_client = get_llm_client(llm_provider)
             providers = list_available_providers()
-            print(f"  LLM disponible: {', '.join(providers)}")
+            print(f"  Available LLM: {', '.join(providers)}")
         except ValueError as e:
             print(f"  [WARN] {e}")
-            print("  El sidekick funcionará sin LLM (solo transcripción)")
+            print("  Sidekick will run without LLM (transcription only)")
 
     def _find_blackhole_device(self) -> Optional[int]:
         """Find BlackHole input device."""
@@ -360,7 +360,7 @@ class Sidekick:
             if self.device_idx is None:
                 self.device_idx = self._find_blackhole_device()
                 if self.device_idx is None:
-                    print("  [ERROR] BlackHole no encontrado. Ejecuta: ./setup.sh")
+                    print("  [ERROR] BlackHole not found. Run: ./setup.sh")
                     return
 
         self.is_running = True
@@ -379,7 +379,7 @@ class Sidekick:
                 print(f"  [ERROR] {e}")
                 return
             except Exception as e:
-                print(f"  [ERROR] No se pudo iniciar Deepgram: {e}")
+                print(f"  [ERROR] Could not start Deepgram: {e}")
                 return
 
             self.start_time = time.time()
@@ -422,9 +422,9 @@ class Sidekick:
                 callback=audio_callback
             )
             self._audio_stream.start()
-            print("  [*] Captura de audio iniciada\n")
+            print("  [*] Audio capture started\n")
         except Exception as e:
-            print(f"  [ERROR] No se pudo iniciar captura de audio: {e}")
+            print(f"  [ERROR] Could not start audio capture: {e}")
 
     @property
     def elapsed_time(self) -> float:
@@ -454,7 +454,7 @@ class Sidekick:
 
     def handle_silence_timeout(self):
         """Callback triggered when continuous silence exceeds timeout limit."""
-        self.safe_print(f"\n[Auto-Quit] Se detectaron más de {int(self.silence_timeout)} segundos de silencio continuo. Saliendo...")
+        self.safe_print(f"\n[Auto-Quit] Detected over {int(self.silence_timeout)} seconds of continuous silence. Exiting...")
         self.is_running = False
 
     def _format_shaded_block(self, text: str) -> str:
@@ -534,7 +534,7 @@ class Sidekick:
         elif self.llm_provider:
             provider_name = self.llm_provider.capitalize()
         else:
-            provider_name = "Ninguno"
+            provider_name = "None"
             
         # Determine status text and dot color
         is_rec_active = False
@@ -553,10 +553,10 @@ class Sidekick:
             status_text = "listening"
             dot_color = "\033[31m"  # Red
 
-        left_plain = f"● {status_text} - {time_str} | llm - {provider_name} | Directorio de salida - {self.output_dir}"
+        left_plain = f"● {status_text} - {time_str} | llm - {provider_name} | Output directory - {self.output_dir}"
         right_plain = "list commands with /"
         
-        left_colored = f"{dot_color}●\033[0m {status_text} - {time_str} \033[90m|\033[0m \033[92mllm - {provider_name}\033[0m \033[90m|\033[0m \033[92mDirectorio de salida - {self.output_dir}\033[0m"
+        left_colored = f"{dot_color}●\033[0m {status_text} - {time_str} \033[90m|\033[0m \033[92mllm - {provider_name}\033[0m \033[90m|\033[0m \033[92mOutput directory - {self.output_dir}\033[0m"
         right_colored = "\033[90mlist commands with /\033[0m"
         
         num_spaces = width - len(left_plain) - len(right_plain)
@@ -962,7 +962,6 @@ class Sidekick:
         print("  > ", end="", flush=True)
         while self.is_running:
             try:
-                # Wait for input with a small timeout (e.g. 0.1 seconds)
                 r, _, _ = select.select([sys.stdin], [], [], 0.1)
                 if not r:
                     continue
@@ -1011,9 +1010,9 @@ class Sidekick:
                 recording_stopped = True
             
             if recording_stopped or transcription_stopped:
-                self.safe_print("[x] Grabación y transcripción detenidas")
+                self.safe_print("[x] Recording and transcription stopped")
             else:
-                self.safe_print("[!] No hay grabación ni transcripción activa")
+                self.safe_print("[!] No active recording or transcription session")
 
         elif cmd == "/start":
             is_recording = False
@@ -1023,7 +1022,7 @@ class Sidekick:
                 is_recording = True
             
             if is_recording or (self.transcriber and self.transcriber.is_running):
-                self.safe_print("[!] Ya hay una sesión de grabación o transcripción activa")
+                self.safe_print("[!] Recording or transcription session already active")
                 return
 
             self.paused = False
@@ -1039,7 +1038,7 @@ class Sidekick:
                 )
                 self.transcriber.start(DEFAULT_SAMPLE_RATE)
             except Exception as e:
-                self.safe_print(f"[ERROR] Error al iniciar Deepgram: {e}")
+                self.safe_print(f"[ERROR] Failed to start Deepgram: {e}")
                 return
 
             if hasattr(self, '_grabador') and self._grabador:
@@ -1052,11 +1051,11 @@ class Sidekick:
                 self._start_audio_capture()
 
             self.start_time = time.time()
-            self.safe_print("[+] Grabación y transcripción iniciadas")
+            self.safe_print("[+] Recording and transcription started")
 
         elif cmd == "/pause":
             if self.paused:
-                self.safe_print("[!] La grabación y transcripción ya están pausadas")
+                self.safe_print("[!] Recording and transcription already paused")
                 return
 
             is_active = False
@@ -1068,7 +1067,7 @@ class Sidekick:
                 is_active = True
             
             if not is_active:
-                self.safe_print("[!] No hay ninguna grabación o transcripción activa para pausar")
+                self.safe_print("[!] No active recording or transcription to pause")
                 return
 
             self.paused = True
@@ -1077,11 +1076,11 @@ class Sidekick:
                 self._grabador.paused = True
                 self._grabador.pause_start_time = self.pause_start_time
             
-            self.safe_print("[||] Grabación y transcripción pausadas")
+            self.safe_print("[||] Recording and transcription paused")
 
         elif cmd == "/resume":
             if not self.paused:
-                self.safe_print("[!] La grabación y transcripción no están pausadas")
+                self.safe_print("[!] Recording and transcription are not paused")
                 return
             
             self.paused = False
@@ -1096,53 +1095,53 @@ class Sidekick:
                 self._grabador.paused = False
                 self._grabador.pause_start_time = None
             
-            self.safe_print("[+] Grabación y transcripción reanudadas")
+            self.safe_print("[+] Recording and transcription resumed")
 
         elif cmd == "/output-dir":
             parts = command.split(maxsplit=1)
             if len(parts) < 2:
-                self.safe_print(f"[DIR] Directorio de salida actual: {self.output_dir}")
+                self.safe_print(f"[DIR] Current output directory: {self.output_dir}")
             else:
                 new_dir = parts[1].strip()
                 new_dir_path = Path(new_dir).expanduser().absolute()
                 self.output_dir = str(new_dir_path)
                 if hasattr(self, '_grabador') and self._grabador:
                     self._grabador.output_dir = self.output_dir
-                self.safe_print(f"[DIR] Directorio de salida configurado a: {self.output_dir}")
+                self.safe_print(f"[DIR] Output directory set to: {self.output_dir}")
 
         elif cmd == "/silence-timeout":
             parts = command.split()
             if len(parts) < 2:
-                self.safe_print(f"[SILENCE] Límite de silencio actual: {self.silence_timeout} segundos (0 para desactivar)")
+                self.safe_print(f"[SILENCE] Current silence timeout: {self.silence_timeout} seconds (0 to disable)")
             else:
                 try:
                     val = float(parts[1])
                     if val < 0:
-                        raise ValueError("El tiempo no puede ser negativo")
+                        raise ValueError("Timeout cannot be negative")
                     self.silence_timeout = val
                     if self.transcriber:
                         self.transcriber.silence_timeout = val
                     if val == 0:
-                        self.safe_print("[SILENCE] Límite de silencio desactivado")
+                        self.safe_print("[SILENCE] Silence timeout disabled")
                     else:
-                        self.safe_print(f"[SILENCE] Límite de silencio configurado a: {val} segundos")
+                        self.safe_print(f"[SILENCE] Silence timeout set to: {val} seconds")
                 except ValueError:
-                    self.safe_print("[!] Valor inválido. Uso: /silence-timeout <segundos>")
+                    self.safe_print("[!] Invalid value. Usage: /silence-timeout <seconds>")
 
         elif cmd == "/context":
             context = self.context.get_context()
             if context:
-                output = ["[Contexto actual]", "-" * 40]
+                output = ["[Current context]", "-" * 40]
                 for line in context.split("\n"):
                     output.append(f"  {line}")
                 output.append("-" * 40)
                 self.safe_print("\n" + "\n".join(output) + "\n")
             else:
-                self.safe_print("\n[No hay contexto aún]\n")
+                self.safe_print("\n[No context yet]\n")
 
         elif cmd == "/clear" or cmd == "/clear-context":
             self.context.clear()
-            self.safe_print("[-] Contexto limpiado")
+            self.safe_print("[-] Context cleared")
 
         elif cmd == "/window-list":
             import io
@@ -1185,18 +1184,18 @@ class Sidekick:
 
             if old_settings is None:
                 # Fallback non-interactive / simple text input if not a TTY
-                print("  Ingrese el nombre de la aplicación, título o ID de la ventana a capturar (o presione Enter para pantalla completa):")
+                print("  Enter application name, title, or window ID to capture (or press Enter for full screen):")
                 try:
                     target = input("  > ").strip()
                 except (KeyboardInterrupt, EOFError):
                     target = ""
             else:
                 windows = get_visible_windows()
-                choices = [{"id": None, "owner": "Pantalla Completa", "title": ""}]
+                choices = [{"id": None, "owner": "Full Screen", "title": ""}]
                 for w in windows:
                     choices.append({
                         "id": w.get("id"),
-                        "owner": w.get("owner", "Desconocido"),
+                        "owner": w.get("owner", "Unknown"),
                         "title": w.get("title", "")
                     })
 
@@ -1221,13 +1220,13 @@ class Sidekick:
                         elif selected_idx >= scroll_offset + max_visible:
                             scroll_offset = selected_idx - max_visible + 1
 
-                        # Move cursor up to the start of our drawing block
+                        # Move cursor up to start of our drawing block
                         sys.stdout.write(f"\033[{lines_drawn}A")
                         
                         width, height = shutil.get_terminal_size()
                         
                         # 1. Header
-                        header = "  Seleccione la ventana a capturar (Use ↑/↓ para navegar, Enter para confirmar, Esc/q para cancelar):"
+                        header = "  Select window to capture (Use ↑/↓ to navigate, Enter to confirm, Esc/q to cancel):"
                         if len(header) > width - 2:
                             header = header[:width-5] + "..."
                         sys.stdout.write(f"\033[K\033[1;96m{header}\033[0m\n")
@@ -1236,7 +1235,7 @@ class Sidekick:
                         for i in range(scroll_offset, scroll_offset + num_choice_lines):
                             choice = choices[i]
                             if choice["id"] is None:
-                                text = "   [Pantalla Completa]"
+                                text = "   [Full Screen]"
                             else:
                                 text = f"   ID: {choice['id']:<10} | {choice['owner']:<20} | {choice['title']}"
                             
@@ -1250,9 +1249,9 @@ class Sidekick:
                                 sys.stdout.write(f"\033[K{display_text}\n")
                         
                         # 3. Footer
-                        footer = f"  [Opción {selected_idx + 1} de {len(choices)}]"
+                        footer = f"  [Option {selected_idx + 1} of {len(choices)}]"
                         if len(choices) > max_visible:
-                            footer += " (Use ↑/↓ para desplazar)"
+                            footer += " (Use ↑/↓ to scroll)"
                         if len(footer) > width - 2:
                             footer = footer[:width-5] + "..."
                         sys.stdout.write(f"\033[K\033[90m{footer}\033[0m\n")
@@ -1305,7 +1304,7 @@ class Sidekick:
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
                 if cancelled:
-                    self.safe_print("  [x] Selección cancelada.")
+                    self.safe_print("  [x] Selection cancelled.")
                     if was_active:
                         self._handle_command("/start")
                     return
@@ -1320,56 +1319,55 @@ class Sidekick:
                     self._grabador.screenshots = True
                     w_info = find_window(target)
                     if w_info:
-                        self.safe_print(f"  [+] Capturando ventana: ID {w_info['id']} ({w_info['owner']} - {w_info['title']})")
+                        self.safe_print(f"  [+] Capturing window: ID {w_info['id']} ({w_info['owner']} - {w_info['title']})")
                         if w_info.get("owner") == "Google Chrome":
                             import chrome_capture
                             if not chrome_capture.is_debug_port_open():
                                 self.safe_print(
-                                    "  [i] Si esta ventana reproduce video y la tapas por completo con "
-                                    "otra, esa captura puede congelarse o verse negra hasta que vuelva a "
-                                    "estar visible (limitación de Chrome). El audio y la transcripción no "
-                                    "se ven afectados."
+                                    "  [i] If this window plays video and you completely cover it with "
+                                    "another window, the capture may freeze or turn black until visible again "
+                                    "(Chrome limitation). Audio and transcription are unaffected."
                                 )
                     else:
-                        self.safe_print(f"  [WARN] Ventana '{target}' no encontrada en este momento. Se usará pantalla completa.")
+                        self.safe_print(f"  [WARN] Window '{target}' not found at this time. Using full screen.")
                 else:
                     self._grabador.window_query = None
-                    self.safe_print("  [+] Configurado para capturar pantalla completa.")
+                    self.safe_print("  [+] Configured for full-screen capture.")
 
             # Start / resume recording and transcription
             self._handle_command("/start")
 
         elif cmd == "/help":
             output = [
-                "[Comandos disponibles]:",
-                "  /context             - Ver contexto actual",
-                "  /clear-context       - Limpiar contexto",
-                "  /output-dir <d>      - Configurar directorio de salida WAV",
-                "  /start               - Iniciar grabación y transcripción",
-                "  /pause               - Pausar grabación y transcripción",
-                "  /resume              - Reanudar grabación y transcripción",
-                "  /stop                - Detener grabación y transcripción",
-                "  /silence-timeout <s> - Configurar tiempo de silencio en segundos (0 para desactivar)",
-                "  /window-list         - Mostrar ventanas visibles y sus IDs",
-                "  /screencapture       - Cambiar ventana capturada periódicamente",
-                "  /help                - Mostrar esta ayuda",
-                "  /quit                - Salir del sidekick",
-                "Escribe cualquier pregunta para consultar al LLM"
+                "[Available commands]:",
+                "  /context             - View current context",
+                "  /clear-context       - Clear context",
+                "  /output-dir <path>   - Set output directory for WAV and transcripts",
+                "  /start               - Start recording and transcription",
+                "  /pause               - Pause recording and transcription",
+                "  /resume              - Resume recording and transcription",
+                "  /stop                - Stop recording and transcription",
+                "  /silence-timeout <s> - Set silence timeout in seconds (0 to disable)",
+                "  /window-list         - Show visible windows and their IDs",
+                "  /screencapture       - Change window captured periodically",
+                "  /help                - Show this help",
+                "  /quit                - Exit sidekick",
+                "Type any question to ask the LLM"
             ]
             self.safe_print("\n".join(output))
 
         else:
-            self.safe_print(f"[!] Comando desconocido: {command}")
+            self.safe_print(f"[!] Unknown command: {command}")
 
     def _handle_query(self, query: str):
         """Handle user query to LLM."""
         if not self.llm_client:
-            self.safe_print("[!] No hay LLM configurado. Solo disponible transcripción.")
+            self.safe_print("[!] No LLM configured. Only transcription available.")
             return
 
-        self.safe_print(f"\n[Pregunta]: {query}")
+        self.safe_print(f"\n[Question]: {query}")
 
-        # Buscar las últimas capturas de pantalla de la reunión
+        # Search for recent meeting screenshots
         import os
         images = []
         if hasattr(self, '_grabador') and self._grabador and getattr(self._grabador, 'screenshots', False):
@@ -1378,15 +1376,15 @@ class Sidekick:
                 try:
                     files = [os.path.join(screenshots_dir, f) for f in os.listdir(screenshots_dir) if f.endswith(".jpg")]
                     files.sort()
-                    # Tomar las últimas 2 imágenes
+                    # Take last 2 images
                     images = files[-2:]
                 except Exception:
                     pass
 
         with self.stdout_lock:
             if images:
-                sys.stdout.write("  \033[90m[*] Cargando capturas de pantalla de la reunión...\033[0m\n")
-            sys.stdout.write("  \033[90m... Pensando ...\033[0m\n")
+                sys.stdout.write("  \033[90m[*] Loading meeting screenshots...\033[0m\n")
+            sys.stdout.write("  \033[90m... Thinking ...\033[0m\n")
             sys.stdout.flush()
 
         try:
@@ -1420,7 +1418,7 @@ class Sidekick:
         # Reset scrolling region to full screen
         sys.stdout.write("\033[r")
         sys.stdout.flush()
-        print("\n  [-] Sidekick detenido")
+        print("\n  [-] Sidekick stopped")
 
     def send_external_audio(self, audio_data: np.ndarray):
         """Send audio data from external source (e.g., eco recorder)."""
@@ -1450,43 +1448,43 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="eco-sidekick",
-        description="Eco Sidekick - Asistente IA para reuniones",
+        description="Eco Sidekick - AI Meeting Assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Ejemplos:
-  %(prog)s                          Usar LLM disponible
-  %(prog)s --llm anthropic          Usar Claude
-  %(prog)s --llm openai             Usar GPT-4
-  %(prog)s --llm mimo               Usar MiMo
-  %(prog)s --list-devices           Ver dispositivos de audio
+Examples:
+  %(prog)s                          Use available LLM
+  %(prog)s --llm anthropic          Use Claude
+  %(prog)s --llm openai             Use GPT-4
+  %(prog)s --llm mimo               Use MiMo
+  %(prog)s --list-devices           View audio devices
         """
     )
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--llm", choices=["anthropic", "openai", "mimo", "minimax"],
-                       help="Proveedor LLM a usar")
+                       help="LLM provider to use")
     parser.add_argument("--device", "-D", metavar="NAME",
-                       help="Dispositivo de audio específico")
+                       help="Target specific audio device")
     parser.add_argument("--list-devices", "-l", action="store_true",
-                       help="Muestra dispositivos de audio disponibles")
+                       help="Show available audio devices")
     parser.add_argument("--silence-timeout", type=float, default=120.0,
-                         help="Tiempo de silencio (segundos) antes de auto-cerrar (0 para desactivar, por defecto 120)")
+                         help="Silence timeout in seconds before auto-quit (0 to disable, default: 120)")
 
     args = parser.parse_args()
 
     print(f"\n  ╔═══════════════════════════════════════╗")
     print(f"  ║    Eco Sidekick v{VERSION}               ║")
-    print(f"  ║    Tu asistente IA para reuniones      ║")
+    print(f"  ║    Your AI Meeting Assistant          ║")
     print(f"  ╚═══════════════════════════════════════╝\n")
 
     if args.list_devices:
         devices = sd.query_devices()
-        print("  Dispositivos de Audio:")
+        print("  Audio Devices:")
         print("  " + "=" * 50)
         for i, dev in enumerate(devices):
             if dev["max_input_channels"] > 0:
                 print(f"    [{i}] {dev['name']}")
-                print(f"        Canales: {dev['max_input_channels']}")
+                print(f"        Channels: {dev['max_input_channels']}")
         return
 
     # Find device
@@ -1498,7 +1496,7 @@ Ejemplos:
                 device_idx = i
                 break
         if device_idx is None:
-            print(f"  [ERROR] Dispositivo '{args.device}' no encontrado")
+            print(f"  [ERROR] Device '{args.device}' not found")
             return
 
     # Start sidekick

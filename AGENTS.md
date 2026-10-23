@@ -150,7 +150,7 @@ When `--llm` is specified:
 
 ### Idempotent Stop
 
-`stop_recording()` uses a `_stopped` flag to prevent duplicate "Grabación Completada" messages when called from both the `finally` block and `_start_with_sidekick`.
+`stop_recording()` uses a `_stopped` flag to prevent duplicate "Recording ended" messages when called from both the `finally` block and `_start_with_sidekick`.
 
 ## Environment Variables
 
